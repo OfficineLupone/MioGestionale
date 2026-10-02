@@ -6,45 +6,125 @@ from google import genai
 from google.genai import types
 import database
 
-# --- 1. CONFIGURAZIONE PAGINA E INIZIALIZZAZIONE DB ---
+# --- 1. CONFIGURAZIONE PAGINA ---
 database.init_db()
 st.set_page_config(
-    page_title="Gestionale IA Enterprise",
+    page_title="FSL GESTIONALE - Dashboard",
     page_icon="⚙️",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="collapsed"
 )
 
-# --- 2. STILE CSS PERSONALIZZATO ---
+# --- 2. CSS PERSONALIZZATO ISO-DESIGN (STILE DA SCHERMATA) ---
 st.markdown("""
     <style>
-    .main {
-        background-color: #f8fafc;
+    /* Sfondo generale grigio chiarissimo/bianco caldo */
+    .stApp {
+        background-color: #f6f8f7;
     }
-    h1 {
-        color: #0f172a;
-        font-weight: 700 !important;
-        font-size: 2rem !important;
-        margin-bottom: 0.5rem !important;
+    
+    /* Nascondi elementi di default Streamlit */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Header Superiore */
+    .top-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.5rem 1rem;
+        background-color: #f6f8f7;
+        margin-bottom: 0.5rem;
     }
-    h2, h3 {
-        color: #1e293b;
-        font-weight: 600 !important;
+    .brand-title {
+        font-weight: 800;
+        font-size: 1.15rem;
+        color: #0d1b1e;
+        letter-spacing: -0.5px;
     }
-    [data-testid="stSidebar"] {
+    .brand-sub {
+        font-size: 0.78rem;
+        color: #64748b;
+        margin-top: -2px;
+    }
+    
+    /* Cards KPI / Metriche stile SaaS */
+    div[data-testid="stMetric"] {
         background-color: #ffffff;
-        border-right: 1px solid #e2e8f0;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 1rem 1.25rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.02);
     }
-    [data-testid="stPills"] button {
-        border-radius: 8px !important;
-        padding: 0.5rem 1rem !important;
-        font-weight: 600 !important;
-        transition: all 0.2s ease-in-out !important;
+    div[data-testid="stMetricLabel"] {
+        color: #64748b !important;
+        font-size: 0.82rem !important;
+        font-weight: 500 !important;
     }
-    .stButton>button {
+    div[data-testid="stMetricValue"] {
+        color: #0f172a !important;
+        font-weight: 700 !important;
+        font-size: 1.8rem !important;
+    }
+    
+    /* Banner Informativo Beige / Avviso */
+    .alert-banner {
+        background-color: #fdf8eb;
+        border: 1px solid #f2e3c6;
         border-radius: 8px;
-        font-weight: 600;
-        transition: all 0.2s ease-in-out;
+        padding: 0.85rem 1.2rem;
+        color: #78350f;
+        font-size: 0.88rem;
+        margin-bottom: 1.2rem;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    
+    /* Pulsanti principali (Verde Scuro scuro tipo la foto) */
+    .stButton>button[kind="primary"] {
+        background-color: #0e3d2f !important;
+        color: #ffffff !important;
+        border: none !important;
+        border-radius: 6px !important;
+        font-weight: 600 !important;
+        font-size: 0.85rem !important;
+        padding: 0.5rem 1.2rem !important;
+        transition: all 0.2s ease !important;
+    }
+    .stButton>button[kind="primary"]:hover {
+        background-color: #145240 !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.15) !important;
+    }
+    
+    /* Customizzazione Tabs di navigazione */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 1.5rem;
+        background-color: transparent;
+        border-bottom: 2px solid #e2e8f0;
+    }
+    .stTabs [data-baseweb="tab"] {
+        height: 40px;
+        white-space: pre;
+        background-color: transparent;
+        border: none;
+        color: #64748b;
+        font-weight: 500;
+        font-size: 0.9rem;
+        padding: 0 0.2rem;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #0d1b1e !important;
+        font-weight: 700 !important;
+        border-bottom: 3px solid #0e3d2f !important;
+    }
+    
+    /* Tabelle stilizzate */
+    .stDataFrame {
+        background-color: #ffffff;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -54,7 +134,7 @@ def get_connection():
 
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 
-# --- FUNZIONI BACKEND DB ---
+# --- FUNZIONI BACKEND ---
 def aggiungi_settore_db(nome_settore: str) -> str:
     try:
         conn = get_connection()
@@ -64,7 +144,7 @@ def aggiungi_settore_db(nome_settore: str) -> str:
         conn.close()
         return f"✅ Settore '{nome_settore}' aggiunto!"
     except Exception as e:
-        return f"Errore durante l'aggiunta: {e}"
+        return f"Errore: {e}"
 
 def rinomina_settore_db(vecchio_nome: str, nuovo_nome: str) -> str:
     try:
@@ -75,7 +155,7 @@ def rinomina_settore_db(vecchio_nome: str, nuovo_nome: str) -> str:
         conn.close()
         return f"✅ Settore '{vecchio_nome}' rinominato in '{nuovo_nome}'!"
     except Exception as e:
-        return f"Errore durante la modifica: {e}"
+        return f"Errore: {e}"
 
 def elimina_settore_db(nome_settore: str) -> str:
     try:
@@ -84,9 +164,9 @@ def elimina_settore_db(nome_settore: str) -> str:
         c.execute("DELETE FROM settori WHERE nome = ?", (nome_settore,))
         conn.commit()
         conn.close()
-        return f"🗑️ Settore '{nome_settore}' eliminato definitivamente!"
+        return f"🗑️ Settore '{nome_settore}' eliminato!"
     except Exception as e:
-        return f"Errore durante l'eliminazione: {e}"
+        return f"Errore: {e}"
 
 def reset_settori_ai(nuovi_settori: list[str]) -> str:
     try:
@@ -99,9 +179,9 @@ def reset_settori_ai(nuovi_settori: list[str]) -> str:
                 c.execute("INSERT INTO settori (nome) VALUES (?)", (settore.strip(),))
         conn.commit()
         conn.close()
-        return f"✅ Settori resettati! Nuova lista: {', '.join(nuovi_settori)}"
+        return f"✅ Settori resettati: {', '.join(nuovi_settori)}"
     except Exception as e:
-        return f"Errore nel reset: {e}"
+        return f"Errore: {e}"
 
 def aggiorna_prodotto_db(nome_prodotto: str, ore: float, costo: float, prezzo: float) -> str:
     try:
@@ -117,9 +197,9 @@ def aggiorna_prodotto_db(nome_prodotto: str, ore: float, costo: float, prezzo: f
         """, (nome_prodotto.strip(), ore, costo, prezzo))
         conn.commit()
         conn.close()
-        return f"✅ Prodotto '{nome_prodotto}' salvato/aggiornato!"
+        return f"✅ Prodotto '{nome_prodotto}' salvato!"
     except Exception as e:
-        return f"Errore salvataggio prodotto: {e}"
+        return f"Errore: {e}"
 
 def elimina_prodotto_db(nome_prodotto: str) -> str:
     try:
@@ -130,192 +210,135 @@ def elimina_prodotto_db(nome_prodotto: str) -> str:
         conn.close()
         return f"🗑️ Prodotto '{nome_prodotto}' eliminato!"
     except Exception as e:
-        return f"Errore eliminazione prodotto: {e}"
+        return f"Errore: {e}"
 
-# Mappatura per le chiamate tool dell'IA
 tools_map = {
     "aggiungi_settore_ai": aggiungi_settore_db,
     "rinomina_settore_ai": rinomina_settore_db,
     "reset_settori_ai": reset_settori_ai,
     "aggiorna_prodotto_ai": aggiorna_prodotto_db
 }
-
 tools_list = [aggiungi_settore_db, rinomina_settore_db, reset_settori_ai, aggiorna_prodotto_db]
 
-# --- BARRA LATERALE E MENU ---
-with st.sidebar:
-    st.title("⚙️ Gestionale AI")
-    st.caption("Sistema Gestionale Conversazionale")
-    st.divider()
-    
-    st.write("**Navigazione**")
-    menu = st.pills(
-        label="Scegli la sezione:",
-        options=["💬 Assistente IA", "📦 Catalogo & Settori", "📄 Preventivi", "🛠️ Consuntivo Ore", "📊 Report"],
-        default="📦 Catalogo & Settori",
-        label_visibility="collapsed"
-    )
-    st.divider()
-    st.caption("Versione 2.5 • Enterprise UI")
+# --- 3. HEADER SUPERIORE ---
+h_left, h_right = st.columns([3, 1])
+with h_left:
+    st.markdown("""
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="background-color: #0e3d2f; color: white; padding: 8px 12px; border-radius: 8px; font-weight: bold;">🛡️</div>
+            <div>
+                <div class="brand-title">GESTIONALE ENTERPRISE</div>
+                <div class="brand-sub">Sistema Integrato AI • Versione 2.5</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
-# --- 1. CHAT ASSISTENTE IA ---
-if menu == "💬 Assistente IA":
-    st.title("💬 Assistente Virtuale")
-    st.write("Esegui modifiche al gestionale semplicemente scrivendo in linguaggio naturale.")
-    
-    with st.container(border=True):
-        st.subheader("💡 Esempi di comandi")
-        st.markdown("""
-        - *'Reset settori con: Tornitura, Fresatura, Rettifica, EDM, Assemblaggio'*
-        - *'Aggiungi il settore Trattamenti Termici'*
-        - *'Crea il prodotto Stampo Plastica con 25 ore, costo 1500 e prezzo 3200'*
-        """)
+st.write("")
 
-    comando = st.text_input("Impartisci un comando all'IA:", placeholder="Es. Aggiungi il settore Verniciatura...")
-    
-    if st.button("🚀 Esegui Comando", type="primary") and comando:
-        if api_key:
-            client = genai.Client(api_key=api_key)
-            response = None
-            
-            # Elenco modelli Gemini stabili ed esistenti
-            modelli_validi = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
-            
-            with st.spinner("L'IA sta elaborando la richiesta..."):
-                for mod in modelli_validi:
-                    try:
-                        response = client.models.generate_content(
-                            model=mod,
-                            contents=comando,
-                            config=types.GenerateContentConfig(
-                                tools=tools_list,
-                                temperature=0
-                            )
-                        )
-                        break
-                    except Exception as e:
-                        # Se il modello dà quota esaurita o non è trovato, prova il successivo
-                        continue
-            
-            if response:
-                if hasattr(response, 'function_calls') and response.function_calls:
-                    for call in response.function_calls:
-                        func_name = call.name
-                        func_args = call.args
-                        if func_name in tools_map:
-                            esito = tools_map[func_name](**func_args)
-                            st.success(esito)
-                            st.rerun()
-                elif response.text:
-                    st.success(response.text)
-                else:
-                    st.info("Operazione completata con successo.")
-            else:
-                st.error("Nessun modello Gemini è riuscito ad elaborare la richiesta. Verifica le tue quote API su Google AI Studio.")
-        else:
-            st.error("Manca la chiave GEMINI_API_KEY nei Secrets di Streamlit!")
+# --- 4. MENU A SCHEDE SUPEROIRE (NAVIGATION TABS) ---
+tab_panoramica, tab_assistente, tab_preventivi, tab_lavori, tab_report = st.tabs([
+    "Panoramica & Catalogo", 
+    "💬 Assistente IA", 
+    "📄 Preventivi", 
+    "🛠️ Consuntivo Ore", 
+    "📊 Report"
+])
 
-# --- 2. CATALOGO E SETTORI ---
-elif menu == "📦 Catalogo & Settori":
-    st.title("📦 Catalogo & Settori Lavorazione")
-    st.write("Gestisci settori e prodotti manualmente o tramite l'Assistente IA.")
-    
+# --- TAB 1: PANORAMICA & CATALOGO ---
+with tab_panoramica:
     conn = get_connection()
     df_settori = pd.read_sql_query("SELECT id AS 'ID', nome AS 'Nome Settore' FROM settori", conn)
     df_prodotti = pd.read_sql_query("SELECT id AS 'ID', nome AS 'Prodotto', ore_lavorazione AS 'Ore Stimate', costo_interno AS 'Costo (€)', prezzo_vendita AS 'Prezzo (€)' FROM prodotti", conn)
     conn.close()
 
-    # KPI In Alto
-    m1, m2, m3 = st.columns(3)
-    with m1:
-        st.metric("Settori Attivi", len(df_settori))
-    with m2:
+    # Titolo di Sezione e Pulsante d'Azione rapida in alto
+    t_col1, t_col2 = st.columns([3, 1])
+    with t_col1:
+        st.markdown("<h2 style='margin:0;'>Panoramica Generale</h2>", unsafe_allow_html=True)
+    with t_col2:
+        with st.popover("+ Nuovo Settore / Prodotto", use_container_width=True):
+            st.write("**Azione Rapida**")
+            tipo = st.radio("Cosa vuoi aggiungere?", ["Settore", "Prodotto"])
+            if tipo == "Settore":
+                n_s = st.text_input("Nome Settore:")
+                if st.button("Salva Settore", type="primary"):
+                    if n_s:
+                        aggiungi_settore_db(n_s)
+                        st.rerun()
+            else:
+                p_n = st.text_input("Nome Prodotto:")
+                p_o = st.number_input("Ore:", min_value=0.0)
+                p_c = st.number_input("Costo (€):", min_value=0.0)
+                p_p = st.number_input("Prezzo (€):", min_value=0.0)
+                if st.button("Salva Prodotto", type="primary"):
+                    if p_n:
+                        aggiorna_prodotto_db(p_n, p_o, p_c, p_p)
+                        st.rerun()
+
+    st.write("")
+
+    # SCHEDE KPI
+    k1, k2, k3, k4 = st.columns(4)
+    with k1:
+        st.metric("Settori Registrati", len(df_settori))
+    with k2:
         st.metric("Prodotti a Catalogo", len(df_prodotti))
-    with m3:
-        if not df_prodotti.empty:
-            margine_medio = (df_prodotti['Prezzo (€)'] - df_prodotti['Costo (€)']).mean()
-            st.metric("Margine Medio / Prodotto", f"€ {margine_medio:,.2f}")
-        else:
-            st.metric("Margine Medio", "€ 0.00")
+    with k3:
+        tot_ore = df_prodotti['Ore Stimate'].sum() if not df_prodotti.empty else 0
+        st.metric("Ore Totali Stimate", f"{tot_ore:.1f} h")
+    with k4:
+        margine = (df_prodotti['Prezzo (€)'] - df_prodotti['Costo (€)']).mean() if not df_prodotti.empty else 0
+        st.metric("Margine Medio / Prod.", f"€ {margine:,.2f}")
 
-    st.divider()
+    st.write("")
 
-    col1, col2 = st.columns([1, 2])
-    
-    # --- SEZIONE SETTORI ---
-    with col1:
-        with st.container(border=True):
-            st.subheader("🏬 Settori Lavorazione")
+    # BANNER DI AVVISO STILE INTERFACCIA
+    if df_settori.empty:
+        st.markdown("""
+            <div class="alert-banner">
+                ⚠️ <b>Attenzione:</b> Non ci sono settori configurati nel database. Aggiungine uno usando il pulsante in alto o chiedi all'Assistente IA.
+            </div>
+        """, unsafe_allow_html=True)
+
+    # TABELLE CATALOGO E SETTORI
+    col_left, col_right = st.columns([1, 2])
+
+    with col_left:
+        with st.container():
+            st.markdown("### 🏬 Settori Lavorazione")
             
-            c_btn1, c_btn2 = st.columns(2)
-            
-            with c_btn1:
-                with st.popover("➕ Aggiungi Settore", use_container_width=True):
-                    st.write("**Nuovo Settore**")
-                    nuovo_set = st.text_input("Nome Settore:")
-                    if st.button("Salva Settore", type="primary"):
-                        if nuovo_set:
-                            res = aggiungi_settore_db(nuovo_set)
-                            st.success(res)
+            s_btn1, s_btn2 = st.columns(2)
+            with s_btn1:
+                with st.popover("✏️ Rinomina", use_container_width=True):
+                    if not df_settori.empty:
+                        s_sel = st.selectbox("Seleziona:", df_settori['Nome Settore'].tolist(), key="ren_s")
+                        s_new = st.text_input("Nuovo nome:", value=s_sel, key="ren_txt")
+                        if st.button("Conferma", type="primary", key="btn_ren"):
+                            rinomina_settore_db(s_sel, s_new)
+                            st.rerun()
+            with s_btn2:
+                with st.popover("🗑️ Elimina", use_container_width=True):
+                    if not df_settori.empty:
+                        s_del = st.selectbox("Elimina:", df_settori['Nome Settore'].tolist(), key="del_s")
+                        if st.button("Conferma Elimina", type="secondary", key="btn_del"):
+                            elimina_settore_db(s_del)
                             st.rerun()
 
-            with c_btn2:
-                with st.popover("⚙️ Gestisci Settori", use_container_width=True):
-                    st.write("**Modifica o Elimina**")
-                    if not df_settori.empty:
-                        settore_sel = st.selectbox("Seleziona Settore:", df_settori['Nome Settore'].tolist())
-                        nuovo_nome_set = st.text_input("Rinomina in:", value=settore_sel)
-                        
-                        col_mod, col_del = st.columns(2)
-                        with col_mod:
-                            if st.button("Rinomina", type="primary"):
-                                res = rinomina_settore_db(settore_sel, nuovo_nome_set)
-                                st.success(res)
-                                st.rerun()
-                        with col_del:
-                            if st.button("Elimina", type="secondary"):
-                                res = elimina_settore_db(settore_sel)
-                                st.success(res)
-                                st.rerun()
-                    else:
-                        st.info("Nessun settore presente.")
-
-            # Tabella Settori
             st.dataframe(df_settori, use_container_width=True, hide_index=True)
 
-    # --- SEZIONE PRODOTTI ---
-    with col2:
-        with st.container(border=True):
-            st.subheader("📋 Catalogo Prodotti e Listino")
+    with col_right:
+        with st.container():
+            st.markdown("### 📋 Catalogo Prodotti e Listino")
             
-            cp_btn1, cp_btn2 = st.columns(2)
-            
-            with cp_btn1:
-                with st.popover("➕ Aggiungi / Modifica Prodotto", use_container_width=True):
-                    st.write("**Dettagli Prodotto**")
-                    p_nome = st.text_input("Nome Prodotto:")
-                    p_ore = st.number_input("Ore Stimate:", min_value=0.0, step=0.5)
-                    p_costo = st.number_input("Costo Interno (€):", min_value=0.0, step=10.0)
-                    p_prezzo = st.number_input("Prezzo Vendita (€):", min_value=0.0, step=10.0)
-                    if st.button("Salva Prodotto", type="primary"):
-                        if p_nome:
-                            res = aggiorna_prodotto_db(p_nome, p_ore, p_costo, p_prezzo)
-                            st.success(res)
-                            st.rerun()
-
-            with cp_btn2:
+            p_btn1, p_btn2 = st.columns([1, 1])
+            with p_btn2:
                 with st.popover("🗑️ Elimina Prodotto", use_container_width=True):
-                    st.write("**Elimina dal Catalogo**")
                     if not df_prodotti.empty:
-                        prod_sel = st.selectbox("Seleziona Prodotto:", df_prodotti['Prodotto'].tolist())
-                        if st.button("Conferma Eliminazione", type="secondary"):
-                            res = elimina_prodotto_db(prod_sel)
-                            st.success(res)
+                        pr_del = st.selectbox("Elimina Prodotto:", df_prodotti['Prodotto'].tolist(), key="del_p")
+                        if st.button("Conferma Eliminazione", type="secondary", key="btn_del_p"):
+                            elimina_prodotto_db(pr_del)
                             st.rerun()
-                    else:
-                        st.info("Nessun prodotto presente.")
 
-            # Tabella Prodotti
             st.dataframe(
                 df_prodotti, 
                 use_container_width=True, 
@@ -327,26 +350,53 @@ elif menu == "📦 Catalogo & Settori":
                 }
             )
 
-# --- 3. PREVENTIVI ---
-elif menu == "📄 Preventivi":
-    st.title("📄 Generazione Preventivi")
-    st.info("Sezione in fase di implementazione.")
-
-# --- 4. CONSUNTIVO ORE ---
-elif menu == "🛠️ Consuntivo Ore":
-    st.title("🛠️ Consuntivo Ore Lavorate")
-    conn = get_connection()
-    df_settori = pd.read_sql_query("SELECT nome FROM settori", conn)
-    conn.close()
+# --- TAB 2: ASSISTENTE IA ---
+with tab_assistente:
+    st.markdown("## 💬 Assistente Virtuale")
+    st.caption("Esegui azioni sul gestionale scrivendo in linguaggio naturale.")
     
-    with st.container(border=True):
-        st.subheader("Registra intervento")
-        settore_sel = st.selectbox("Seleziona Settore", df_settori['nome'].tolist() if not df_settori.empty else [])
-        ore_eff = st.number_input("Ore Effettive Lavorate", min_value=0.0, step=0.5)
-        if st.button("Salva Registro Ore", type="primary"):
-            st.success(f"Registrate {ore_eff} ore per il settore {settore_sel}")
+    cmd = st.text_input("Impartisci un comando all'IA:", placeholder="Es. Reset settori con Tornitura, Fresatura e Assemblaggio...")
+    if st.button("🚀 Esegui Comando", type="primary") and cmd:
+        if api_key:
+            client = genai.Client(api_key=api_key)
+            response = None
+            modelli_validi = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+            
+            with st.spinner("Elaborazione in corso..."):
+                for mod in modelli_validi:
+                    try:
+                        response = client.models.generate_content(
+                            model=mod,
+                            contents=cmd,
+                            config=types.GenerateContentConfig(tools=tools_list, temperature=0)
+                        )
+                        break
+                    except Exception:
+                        continue
+            
+            if response:
+                if hasattr(response, 'function_calls') and response.function_calls:
+                    for call in response.function_calls:
+                        if call.name in tools_map:
+                            res = tools_map[call.name](**call.args)
+                            st.success(res)
+                            st.rerun()
+                elif response.text:
+                    st.success(response.text)
+            else:
+                st.error("Servizio temporaneamente non disponibile. Riprova tra poco.")
+        else:
+            st.error("Configura la chiave GEMINI_API_KEY nei secrets!")
 
-# --- 5. REPORT ---
-elif menu == "📊 Report":
-    st.title("📊 Report e Analytics")
-    st.info("Sezione in fase di implementazione.")
+# --- TAB 3, 4, 5: ALTRE SEZIONI ---
+with tab_preventivi:
+    st.markdown("## 📄 Gestione Preventivi")
+    st.info("Modulo preventivi in aggiornamento.")
+
+with tab_lavori:
+    st.markdown("## 🛠️ Consuntivo Ore Lavorate")
+    st.info("Modulo registrazione ore in aggiornamento.")
+
+with tab_report:
+    st.markdown("## 📊 Report & Analytics")
+    st.info("Modulo reportistica in aggiornamento.")
