@@ -52,6 +52,28 @@ def rinomina_settore_ai(vecchio_nome: str, nuovo_nome: str) -> str:
     except Exception as e:
         return f"Errore durante la modifica: {e}"
 
+def reset_settori_ai(nuovi_settori: list[str]) -> str:
+    """Cancella tutti i settori esistenti, azzera gli ID partendo da 1 e inserisce la lista fornita.
+    
+    Args:
+        nuovi_settori: Lista con i nomi dei nuovi settori da inserire in ordine (es. ["Tornitura", "Fresatura"]).
+    """
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        # Cancella tutti i dati
+        c.execute("DELETE FROM settori")
+        # Azzera il contatore AUTOINCREMENT di SQLite
+        c.execute("DELETE FROM sqlite_sequence WHERE name='settori'")
+        # Inserisce i nuovi settori
+        for settore in nuovi_settori:
+            c.execute("INSERT INTO settori (nome) VALUES (?)", (settore.strip(),))
+        conn.commit()
+        conn.close()
+        return f"✅ Tutti i settori sono stati resettati! Inseriti nell'ordine partendo da ID 1: {', '.join(nuovi_settori)}"
+    except Exception as e:
+        return f"Errore durante il reset dei settori: {e}"
+
 def aggiorna_prodotto_ai(nome_prodotto: str, ore: float, costo: float, prezzo: float) -> str:
     """Crea o aggiorna un prodotto con ore di lavorazione, costo interno e prezzo di vendita.
     
@@ -82,11 +104,12 @@ def aggiorna_prodotto_ai(nome_prodotto: str, ore: float, costo: float, prezzo: f
 tools_map = {
     "aggiungi_settore_ai": aggiungi_settore_ai,
     "rinomina_settore_ai": rinomina_settore_ai,
+    "reset_settori_ai": reset_settori_ai,
     "aggiorna_prodotto_ai": aggiorna_prodotto_ai
 }
 
 # Lista di funzioni per Gemini
-tools_list = [aggiungi_settore_ai, rinomina_settore_ai, aggiorna_prodotto_ai]
+tools_list = [aggiungi_settore_ai, rinomina_settore_ai, reset_settori_ai, aggiorna_prodotto_ai]
 
 # --- MENU E INTERFACCIA ---
 st.sidebar.title("🤖 Gestionale AI")
@@ -95,7 +118,7 @@ menu = st.sidebar.radio("Navigazione", ["💬 Assistente Chat IA", "📦 Catalog
 # 1. CHAT PER MODIFICHE AUTOMATICHE
 if menu == "💬 Assistente Chat IA":
     st.header("💬 Modifica il Gestionale Scrivendo all'IA")
-    st.info("Scrivi ad esempio: 'Aggiungi il settore Verniciatura', 'Rinomina il settore Lavorazione in Taglio Laser', oppure 'Crea il prodotto Taglio Laser con 5 ore, costo 20 e prezzo 50'")
+    st.info("Esempi:\n- 'Reset settori con: Tornitura, Fresatura, Rettifica, EDM, Aggiustaggio, Assemblaggio'\n- 'Rinomina il settore X in Y'\n- 'Crea prodotto X con 5 ore, costo 20 e prezzo 50'")
     
     comando = st.text_input("Scrivi qui il comando:")
     
@@ -103,8 +126,6 @@ if menu == "💬 Assistente Chat IA":
         if api_key:
             client = genai.Client(api_key=api_key)
             response = None
-            
-            # Lista di modelli da provare in caso di sovraccarico
             modelli_da_provare = ["gemini-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"]
             
             with st.spinner("L'IA sta elaborando la richiesta..."):
@@ -118,17 +139,16 @@ if menu == "💬 Assistente Chat IA":
                                 temperature=0
                             )
                         )
-                        break  # Se ha successo, esce dal ciclo di fallback
+                        break
                     except Exception as e:
                         if "503" in str(e) or "UNAVAILABLE" in str(e):
-                            time.sleep(1) # Attende un secondo prima di riprovare con il modello successivo
+                            time.sleep(1)
                             continue
                         else:
                             st.error(f"Errore: {e}")
                             break
             
             if response:
-                # Gestione dell'esecuzione della funzione
                 if hasattr(response, 'function_calls') and response.function_calls:
                     for call in response.function_calls:
                         func_name = call.name
@@ -141,7 +161,7 @@ if menu == "💬 Assistente Chat IA":
                 else:
                     st.info("Operazione completata con successo.")
             else:
-                st.warning("I server di Google sono temporaneamente molto occupati. Riprova tra pochi secondi.")
+                st.warning("I server di Google sono temporaneamente occupati. Riprova tra pochi secondi.")
         else:
             st.error("Manca la chiave GEMINI_API_KEY nei Secrets di Streamlit!")
 
