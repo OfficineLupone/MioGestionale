@@ -9,21 +9,18 @@ import database
 # --- 1. CONFIGURAZIONE PAGINA ---
 database.init_db()
 st.set_page_config(
-    page_title="Gestionale IA Enterprise",
+    page_title="Officine Lupone",
     page_icon="⚙️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# --- 2. STILE CSS PERSONALIZZATO (LOOK & FEEL PROFESSIONALE) ---
+# --- 2. STILE CSS PERSONALIZZATO ---
 st.markdown("""
     <style>
-    /* Sfondo principale e font */
     .main {
         background-color: #f8fafc;
     }
-    
-    /* Titoli */
     h1 {
         color: #0f172a;
         font-weight: 700 !important;
@@ -34,22 +31,16 @@ st.markdown("""
         color: #1e293b;
         font-weight: 600 !important;
     }
-
-    /* Stile Sidebar */
     [data-testid="stSidebar"] {
         background-color: #ffffff;
         border-right: 1px solid #e2e8f0;
     }
-
-    /* Stile per Pills di Navigazione (sostituisce i radio button) */
     [data-testid="stPills"] button {
         border-radius: 8px !important;
         padding: 0.5rem 1rem !important;
         font-weight: 600 !important;
         transition: all 0.2s ease-in-out !important;
     }
-    
-    /* Bottoni Generici */
     .stButton>button {
         border-radius: 8px;
         font-weight: 600;
@@ -150,9 +141,9 @@ tools_map = {
 
 tools_list = [aggiungi_settore_db, rinomina_settore_db, reset_settori_ai, aggiorna_prodotto_db]
 
-# --- BARRA LATERALE E MENU CON PULSANTI ("PILLS") ---
+# --- BARRA LATERALE E MENU ---
 with st.sidebar:
-    st.title("⚙️ Gestionale AI")
+    st.title("⚙️ Officine Lupone")
     st.caption("Sistema Gestionale Conversazionale")
     st.divider()
     
@@ -185,7 +176,8 @@ if menu == "💬 Assistente IA":
         if api_key:
             client = genai.Client(api_key=api_key)
             response = None
-            modelli_da_provare = ["gemini-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"]
+            # Lista estesa di modelli per evitare l'errore 429 di quota esaurita
+            modelli_da_provare = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-flash-latest"]
             
             with st.spinner("L'IA sta elaborando la richiesta..."):
                 for mod in modelli_da_provare:
@@ -200,7 +192,7 @@ if menu == "💬 Assistente IA":
                         )
                         break
                     except Exception as e:
-                        if "503" in str(e) or "UNAVAILABLE" in str(e):
+                        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e) or "503" in str(e) or "UNAVAILABLE" in str(e):
                             time.sleep(1)
                             continue
                         else:
@@ -221,11 +213,11 @@ if menu == "💬 Assistente IA":
                 else:
                     st.info("Operazione completata con successo.")
             else:
-                st.warning("I server di Google sono momentaneamente occupati. Riprova tra poco.")
+                st.error("Quota limite dell'API temporaneamente raggiunta su tutti i modelli. Riprova più tardi o usa i pulsanti manuali.")
         else:
             st.error("Manca la chiave GEMINI_API_KEY nei Secrets di Streamlit!")
 
-# --- 2. CATALOGO E SETTORI (CON PULSANTI MANUALI +, ✏️, 🗑️) ---
+# --- 2. CATALOGO E SETTORI ---
 elif menu == "📦 Catalogo & Settori":
     st.title("📦 Catalogo & Settori Lavorazione")
     st.write("Gestisci settori e prodotti sia manualmente con i pulsanti sia tramite l'Assistente IA.")
@@ -257,7 +249,6 @@ elif menu == "📦 Catalogo & Settori":
         with st.container(border=True):
             st.subheader("🏬 Settori Lavorazione")
             
-            # Pulsanti di Azione (+) e (✏️)
             c_btn1, c_btn2 = st.columns(2)
             
             with c_btn1:
@@ -299,7 +290,6 @@ elif menu == "📦 Catalogo & Settori":
         with st.container(border=True):
             st.subheader("📋 Catalogo Prodotti e Listino")
             
-            # Pulsanti di Azione (+) e (✏️) per Prodotti
             cp_btn1, cp_btn2 = st.columns(2)
             
             with cp_btn1:
