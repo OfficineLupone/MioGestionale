@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
+import time
 from google import genai
 from google.genai import types
 import database
@@ -100,32 +101,47 @@ if menu == "💬 Assistente Chat IA":
     
     if st.button("Invia Comando") and comando:
         if api_key:
-            try:
-                client = genai.Client(api_key=api_key)
-                with st.spinner("L'IA sta elaborando la richiesta..."):
-                    response = client.models.generate_content(
-                        model="gemini-flash-latest",
-                        contents=comando,
-                        config=types.GenerateContentConfig(
-                            tools=tools_list,
-                            temperature=0
+            client = genai.Client(api_key=api_key)
+            response = None
+            
+            # Lista di modelli da provare in caso di sovraccarico
+            modelli_da_provare = ["gemini-flash-latest", "gemini-1.5-flash", "gemini-1.5-pro"]
+            
+            with st.spinner("L'IA sta elaborando la richiesta..."):
+                for mod in modelli_da_provare:
+                    try:
+                        response = client.models.generate_content(
+                            model=mod,
+                            contents=comando,
+                            config=types.GenerateContentConfig(
+                                tools=tools_list,
+                                temperature=0
+                            )
                         )
-                    )
-                    
-                    # Gestione dell'esecuzione della funzione
-                    if hasattr(response, 'function_calls') and response.function_calls:
-                        for call in response.function_calls:
-                            func_name = call.name
-                            func_args = call.args
-                            if func_name in tools_map:
-                                esito = tools_map[func_name](**func_args)
-                                st.success(esito)
-                    elif response.text:
-                        st.success(response.text)
-                    else:
-                        st.info("Operazione completata con successo.")
-            except Exception as err:
-                st.error(f"Errore durante l'esecuzione del comando: {err}")
+                        break  # Se ha successo, esce dal ciclo di fallback
+                    except Exception as e:
+                        if "503" in str(e) or "UNAVAILABLE" in str(e):
+                            time.sleep(1) # Attende un secondo prima di riprovare con il modello successivo
+                            continue
+                        else:
+                            st.error(f"Errore: {e}")
+                            break
+            
+            if response:
+                # Gestione dell'esecuzione della funzione
+                if hasattr(response, 'function_calls') and response.function_calls:
+                    for call in response.function_calls:
+                        func_name = call.name
+                        func_args = call.args
+                        if func_name in tools_map:
+                            esito = tools_map[func_name](**func_args)
+                            st.success(esito)
+                elif response.text:
+                    st.success(response.text)
+                else:
+                    st.info("Operazione completata con successo.")
+            else:
+                st.warning("I server di Google sono temporaneamente molto occupati. Riprova tra pochi secondi.")
         else:
             st.error("Manca la chiave GEMINI_API_KEY nei Secrets di Streamlit!")
 
