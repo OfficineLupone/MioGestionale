@@ -5,6 +5,7 @@ from google import genai
 from google.genai import types
 import database
 
+# Inizializzazione DB e pagina
 database.init_db()
 st.set_page_config(page_title="Gestionale IA Conversazionale", layout="wide")
 
@@ -26,6 +27,21 @@ def aggiungi_settore_ai(nome_settore: str) -> str:
     except Exception as e:
         return f"Errore nell'aggiunta del settore: {e}"
 
+def rinomina_settore_ai(vecchio_nome: str, nuovo_nome: str) -> str:
+    """Rinomina un settore esistente nel gestionale."""
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("UPDATE settori SET nome = ? WHERE nome = ?", (nuovo_nome, vecchio_nome))
+        if c.rowcount == 0:
+            conn.close()
+            return f"⚠️ Nessun settore trovato con il nome '{vecchio_nome}'."
+        conn.commit()
+        conn.close()
+        return f"✅ Settore '{vecchio_nome}' rinominato con successo in '{nuovo_nome}'!"
+    except Exception as e:
+        return f"Errore durante la modifica: {e}"
+
 def aggiorna_prodotto_ai(nome_prodotto: str, ore: float, costo: float, prezzo: float) -> str:
     """Crea o aggiorna un prodotto con ore, costo interno e prezzo di vendita."""
     try:
@@ -43,7 +59,14 @@ def aggiorna_prodotto_ai(nome_prodotto: str, ore: float, costo: float, prezzo: f
     except Exception as e:
         return f"Errore nell'aggiornamento del prodotto: {e}"
 
-tools_list = [aggiungi_settore_ai, aggiorna_prodotto_ai]
+# Mappa per l'esecuzione automatica delle funzioni
+tools_map = {
+    "aggiungi_settore_ai": aggiungi_settore_ai,
+    "rinomina_settore_ai": rinomina_settore_ai,
+    "aggiorna_prodotto_ai": aggiorna_prodotto_ai
+}
+
+tools_list = [aggiungi_settore_ai, rinomina_settore_ai, aggiorna_prodotto_ai]
 
 # --- MENU E INTERFACCIA ---
 st.sidebar.title("🤖 Gestionale AI")
@@ -52,17 +75,32 @@ menu = st.sidebar.radio("Navigazione", ["💬 Assistente Chat IA", "📦 Catalog
 # 1. CHAT PER MODIFICHE AUTOMATICHE
 if menu == "💬 Assistente Chat IA":
     st.header("💬 Modifica il Gestionale Scrivendo all'IA")
-    st.info("Scrivi ad esempio: 'Aggiungi il settore Verniciatura' oppure 'Crea il prodotto Taglio Laser con 5 ore, costo 20 e prezzo 50'")
+    st.info("Scrivi ad esempio: 'Aggiungi il settore Verniciatura', 'Rinomina il settore Lavorazione in Taglio Laser', oppure 'Crea il prodotto Taglio Laser con 5 ore, costo 20 e prezzo 50'")
+    
     comando = st.text_input("Scrivi qui il comando:")
+    
     if st.button("Invia Comando") and comando:
         if api_key:
             client = genai.Client(api_key=api_key)
-            with st.spinner("L'IA sta modificando il database..."):
+            with st.spinner("L'IA sta elaborando la richiesta..."):
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash", contents=comando,
+                    model="gemini-2.5-flash",
+                    contents=comando,
                     config=types.GenerateContentConfig(tools=tools_list, temperature=0)
                 )
-                st.success(response.text)
+                
+                # Se l'IA ha richiesto l'esecuzione di una funzione
+                if response.function_calls:
+                    for call in response.function_calls:
+                        func_name = call.name
+                        func_args = call.args
+                        if func_name in tools_map:
+                            esito = tools_map[func_name](**func_args)
+                            st.success(esito)
+                elif response.text:
+                    st.write(response.text)
+                else:
+                    st.info("Azione eseguita.")
         else:
             st.error("Manca la chiave GEMINI_API_KEY nei Secrets di Streamlit!")
 
@@ -78,25 +116,6 @@ elif menu == "📦 Catalogo & Settori":
         st.subheader("Catalogo Prodotti")
         st.dataframe(pd.read_sql_query("SELECT * FROM prodotti", conn), use_container_width=True)
     conn.close()
-    
-    # Aggiungi questa nuova funzione nel codice:
-def rinomina_settore_ai(vecchio_nome: str, nuovo_nome: str) -> str:
-    """Rinomina un settore esistente nel gestionale."""
-    try:
-        conn = get_connection()
-        c = conn.cursor()
-        c.execute("UPDATE settori SET nome = ? WHERE nome = ?", (nuovo_nome, vecchio_nome))
-        if c.rowcount == 0:
-            conn.close()
-            return f"⚠️ Nessun settore trovato con il nome '{vecchio_nome}'."
-        conn.commit()
-        conn.close()
-        return f"✅ Settore '{vecchio_nome}' rinominato con successo in '{nuovo_nome}'!"
-    except Exception as e:
-        return f"Errore durante la modifica: {e}"
-
-# Aggiorna la lista dei tool messi a disposizione dell'IA:
-tools_list = [aggiungi_settore_ai, rinomina_settore_ai, aggiorna_prodotto_ai]
 
 # 3. PREVENTIVI
 elif menu == "📄 Preventivi":
