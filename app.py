@@ -8,7 +8,7 @@ import database
 # --- 1. CONFIGURAZIONE PAGINA ---
 database.init_db()
 st.set_page_config(
-    page_title="FSL GESTIONALE - Dashboard",
+    page_title="OFFICINE LUPONE - Dashboard",
     page_icon="⚙️",
     layout="wide",
     initial_sidebar_state="collapsed"
