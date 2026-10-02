@@ -9,6 +9,12 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         nome TEXT UNIQUE NOT NULL)''')
         
+    c.execute('''CREATE TABLE IF NOT EXISTS operatori (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        nome TEXT NOT NULL,
+        settore_id INTEGER NOT NULL,
+        FOREIGN KEY (settore_id) REFERENCES settori(id) ON DELETE CASCADE)''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS prodotti (
         id INTEGER PRIMARY KEY AUTOINCREMENT, 
         nome TEXT UNIQUE NOT NULL, 
