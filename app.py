@@ -64,7 +64,7 @@ st.markdown("""
         border-radius: 8px;
     }
     </style>
-""", unsafe_allow_html=unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 def get_connection():
     return sqlite3.connect('gestionale.db')
