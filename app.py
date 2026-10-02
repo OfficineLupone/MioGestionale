@@ -1,7 +1,6 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-import time
 from google import genai
 from google.genai import types
 import database
@@ -9,13 +8,13 @@ import database
 # --- 1. CONFIGURAZIONE PAGINA ---
 database.init_db()
 st.set_page_config(
-    page_title="FSL GESTIONALE - Dashboard",
+    page_title="OFFICINE LUPONE - Dashboard",
     page_icon="⚙️",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# --- 2. CSS PERSONALIZZATO ISO-DESIGN (STILE DA SCHERMATA) ---
+# --- 2. CSS PERSONALIZZATO ISO-DESIGN ---
 st.markdown("""
     <style>
     /* Sfondo generale grigio chiarissimo/bianco caldo */
@@ -77,12 +76,9 @@ st.markdown("""
         color: #78350f;
         font-size: 0.88rem;
         margin-bottom: 1.2rem;
-        display: flex;
-        align-items: center;
-        gap: 10px;
     }
     
-    /* Pulsanti principali (Verde Scuro scuro tipo la foto) */
+    /* Pulsanti principali (Verde Scuro scuro) */
     .stButton>button[kind="primary"] {
         background-color: #0e3d2f !important;
         color: #ffffff !important;
@@ -134,7 +130,7 @@ def get_connection():
 
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 
-# --- FUNZIONI BACKEND ---
+# --- FUNZIONI BACKEND DB ---
 def aggiungi_settore_db(nome_settore: str) -> str:
     try:
         conn = get_connection()
@@ -235,49 +231,28 @@ with h_left:
 
 st.write("")
 
-# --- 4. MENU A SCHEDE SUPEROIRE (NAVIGATION TABS) ---
-tab_panoramica, tab_assistente, tab_preventivi, tab_lavori, tab_report = st.tabs([
-    "Panoramica & Catalogo", 
-    "💬 Assistente IA", 
-    "📄 Preventivi", 
-    "🛠️ Consuntivo Ore", 
-    "📊 Report"
+# DATI CONDIVISI
+conn = get_connection()
+df_settori = pd.read_sql_query("SELECT id AS 'ID', nome AS 'Nome Settore' FROM settori", conn)
+df_prodotti = pd.read_sql_query("SELECT id AS 'ID', nome AS 'Prodotto', ore_lavorazione AS 'Ore Stimate', costo_interno AS 'Costo (€)', prezzo_vendita AS 'Prezzo (€)' FROM prodotti", conn)
+conn.close()
+
+# --- 4. MENU A SCHEDE SEPARATE ---
+tab_panoramica, tab_settori, tab_prodotti, tab_preventivi, tab_report, tab_assistente = st.tabs([
+    "Panoramica", 
+    "Settori Produttivi", 
+    "Catalogo Prodotti", 
+    "Preventivi", 
+    "Report",
+    "💬 Assistente IA"
 ])
 
-# --- TAB 1: PANORAMICA & CATALOGO ---
+# --- 1. PANORAMICA ---
 with tab_panoramica:
-    conn = get_connection()
-    df_settori = pd.read_sql_query("SELECT id AS 'ID', nome AS 'Nome Settore' FROM settori", conn)
-    df_prodotti = pd.read_sql_query("SELECT id AS 'ID', nome AS 'Prodotto', ore_lavorazione AS 'Ore Stimate', costo_interno AS 'Costo (€)', prezzo_vendita AS 'Prezzo (€)' FROM prodotti", conn)
-    conn.close()
-
-    # Titolo di Sezione e Pulsante d'Azione rapida in alto
-    t_col1, t_col2 = st.columns([3, 1])
-    with t_col1:
-        st.markdown("<h2 style='margin:0;'>Panoramica Generale</h2>", unsafe_allow_html=True)
-    with t_col2:
-        with st.popover("+ Nuovo Settore / Prodotto", use_container_width=True):
-            st.write("**Azione Rapida**")
-            tipo = st.radio("Cosa vuoi aggiungere?", ["Settore", "Prodotto"])
-            if tipo == "Settore":
-                n_s = st.text_input("Nome Settore:")
-                if st.button("Salva Settore", type="primary"):
-                    if n_s:
-                        aggiungi_settore_db(n_s)
-                        st.rerun()
-            else:
-                p_n = st.text_input("Nome Prodotto:")
-                p_o = st.number_input("Ore:", min_value=0.0)
-                p_c = st.number_input("Costo (€):", min_value=0.0)
-                p_p = st.number_input("Prezzo (€):", min_value=0.0)
-                if st.button("Salva Prodotto", type="primary"):
-                    if p_n:
-                        aggiorna_prodotto_db(p_n, p_o, p_c, p_p)
-                        st.rerun()
-
+    st.markdown("## Panoramica Generale")
     st.write("")
 
-    # SCHEDE KPI
+    # KPI In Alto
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.metric("Settori Registrati", len(df_settori))
@@ -292,68 +267,115 @@ with tab_panoramica:
 
     st.write("")
 
-    # BANNER DI AVVISO STILE INTERFACCIA
     if df_settori.empty:
         st.markdown("""
             <div class="alert-banner">
-                ⚠️ <b>Attenzione:</b> Non ci sono settori configurati nel database. Aggiungine uno usando il pulsante in alto o chiedi all'Assistente IA.
+                ⚠️ <b>Nessun settore registrato:</b> Vai nella scheda <b>Settori Produttivi</b> per aggiungerne uno o usa l'Assistente IA.
             </div>
         """, unsafe_allow_html=True)
 
-    # TABELLE CATALOGO E SETTORI
-    col_left, col_right = st.columns([1, 2])
+    c_left, c_right = st.columns(2)
+    with c_left:
+        st.markdown("### 🏬 Ultimi Settori")
+        st.dataframe(df_settori, use_container_width=True, hide_index=True)
+    with c_right:
+        st.markdown("### 📋 Anteprima Catalogo")
+        st.dataframe(df_prodotti.head(5), use_container_width=True, hide_index=True)
 
-    with col_left:
-        with st.container():
-            st.markdown("### 🏬 Settori Lavorazione")
-            
-            s_btn1, s_btn2 = st.columns(2)
-            with s_btn1:
-                with st.popover("✏️ Rinomina", use_container_width=True):
-                    if not df_settori.empty:
-                        s_sel = st.selectbox("Seleziona:", df_settori['Nome Settore'].tolist(), key="ren_s")
-                        s_new = st.text_input("Nuovo nome:", value=s_sel, key="ren_txt")
-                        if st.button("Conferma", type="primary", key="btn_ren"):
-                            rinomina_settore_db(s_sel, s_new)
-                            st.rerun()
-            with s_btn2:
-                with st.popover("🗑️ Elimina", use_container_width=True):
-                    if not df_settori.empty:
-                        s_del = st.selectbox("Elimina:", df_settori['Nome Settore'].tolist(), key="del_s")
-                        if st.button("Conferma Elimina", type="secondary", key="btn_del"):
-                            elimina_settore_db(s_del)
-                            st.rerun()
+# --- 2. SETTORI PRODUTTIVI ---
+with tab_settori:
+    st.markdown("## 🏬 Gestione Settori Produttivi")
+    st.write("Aggiungi, modifica o elimina i settori di lavorazione.")
+    
+    col_s1, col_s2, col_s3 = st.columns(3)
+    
+    with col_s1:
+        with st.popover("➕ Nuovo Settore", use_container_width=True):
+            st.write("**Aggiungi Settore**")
+            nuovo_s = st.text_input("Nome Settore:", key="set_add_input")
+            if st.button("Salva Settore", type="primary", key="btn_add_s"):
+                if nuovo_s:
+                    aggiungi_settore_db(nuovo_s)
+                    st.rerun()
 
-            st.dataframe(df_settori, use_container_width=True, hide_index=True)
+    with col_s2:
+        with st.popover("✏️ Rinomina Settore", use_container_width=True):
+            if not df_settori.empty:
+                s_sel = st.selectbox("Seleziona da rinominare:", df_settori['Nome Settore'].tolist(), key="set_ren_sel")
+                s_new = st.text_input("Nuovo nome:", value=s_sel, key="set_ren_txt")
+                if st.button("Conferma Rinomina", type="primary", key="btn_ren_s"):
+                    rinomina_settore_db(s_sel, s_new)
+                    st.rerun()
+            else:
+                st.info("Nessun settore presente.")
 
-    with col_right:
-        with st.container():
-            st.markdown("### 📋 Catalogo Prodotti e Listino")
-            
-            p_btn1, p_btn2 = st.columns([1, 1])
-            with p_btn2:
-                with st.popover("🗑️ Elimina Prodotto", use_container_width=True):
-                    if not df_prodotti.empty:
-                        pr_del = st.selectbox("Elimina Prodotto:", df_prodotti['Prodotto'].tolist(), key="del_p")
-                        if st.button("Conferma Eliminazione", type="secondary", key="btn_del_p"):
-                            elimina_prodotto_db(pr_del)
-                            st.rerun()
+    with col_s3:
+        with st.popover("🗑️ Elimina Settore", use_container_width=True):
+            if not df_settori.empty:
+                s_del = st.selectbox("Seleziona da eliminare:", df_settori['Nome Settore'].tolist(), key="set_del_sel")
+                if st.button("Conferma Eliminazione", type="secondary", key="btn_del_s"):
+                    elimina_settore_db(s_del)
+                    st.rerun()
+            else:
+                st.info("Nessun settore presente.")
 
-            st.dataframe(
-                df_prodotti, 
-                use_container_width=True, 
-                hide_index=True,
-                column_config={
-                    "Costo (€)": st.column_config.NumberColumn(format="€ %.2f"),
-                    "Prezzo (€)": st.column_config.NumberColumn(format="€ %.2f"),
-                    "Ore Stimate": st.column_config.NumberColumn(format="%.1f h")
-                }
-            )
+    st.write("")
+    st.dataframe(df_settori, use_container_width=True, hide_index=True)
 
-# --- TAB 2: ASSISTENTE IA ---
+# --- 3. CATALOGO PRODOTTI ---
+with tab_prodotti:
+    st.markdown("## 📋 Catalogo Prodotti e Listino")
+    st.write("Gestisci i prodotti a listino con relativi prezzi e stime orarie.")
+
+    cp1, cp2 = st.columns(2)
+    with cp1:
+        with st.popover("➕ Aggiungi / Modifica Prodotto", use_container_width=True):
+            st.write("**Dettagli Prodotto**")
+            p_n = st.text_input("Nome Prodotto:", key="p_name_inp")
+            p_o = st.number_input("Ore Lavorazione:", min_value=0.0, step=0.5, key="p_ore_inp")
+            p_c = st.number_input("Costo Interno (€):", min_value=0.0, step=10.0, key="p_cost_inp")
+            p_p = st.number_input("Prezzo Vendita (€):", min_value=0.0, step=10.0, key="p_price_inp")
+            if st.button("Salva Prodotto", type="primary", key="btn_save_p"):
+                if p_n:
+                    aggiorna_prodotto_db(p_n, p_o, p_c, p_p)
+                    st.rerun()
+
+    with cp2:
+        with st.popover("🗑️ Elimina Prodotto", use_container_width=True):
+            if not df_prodotti.empty:
+                pr_del = st.selectbox("Seleziona Prodotto:", df_prodotti['Prodotto'].tolist(), key="p_del_sel")
+                if st.button("Conferma Eliminazione", type="secondary", key="btn_del_p"):
+                    elimina_prodotto_db(pr_del)
+                    st.rerun()
+            else:
+                st.info("Nessun prodotto a catalogo.")
+
+    st.write("")
+    st.dataframe(
+        df_prodotti, 
+        use_container_width=True, 
+        hide_index=True,
+        column_config={
+            "Costo (€)": st.column_config.NumberColumn(format="€ %.2f"),
+            "Prezzo (€)": st.column_config.NumberColumn(format="€ %.2f"),
+            "Ore Stimate": st.column_config.NumberColumn(format="%.1f h")
+        }
+    )
+
+# --- 4. PREVENTIVI ---
+with tab_preventivi:
+    st.markdown("## 📄 Generazione e Modulo Preventivi")
+    st.info("Modulo gestione preventivi in fase di sviluppo.")
+
+# --- 5. REPORT ---
+with tab_report:
+    st.markdown("## 📊 Report & Analytics")
+    st.info("Modulo report e statistiche di produzione in fase di sviluppo.")
+
+# --- 6. ASSISTENTE IA ---
 with tab_assistente:
-    st.markdown("## 💬 Assistente Virtuale")
-    st.caption("Esegui azioni sul gestionale scrivendo in linguaggio naturale.")
+    st.markdown("## 💬 Assistente AI")
+    st.caption("Fai richieste al gestionale scrivendo in linguaggio naturale.")
     
     cmd = st.text_input("Impartisci un comando all'IA:", placeholder="Es. Reset settori con Tornitura, Fresatura e Assemblaggio...")
     if st.button("🚀 Esegui Comando", type="primary") and cmd:
@@ -387,16 +409,3 @@ with tab_assistente:
                 st.error("Servizio temporaneamente non disponibile. Riprova tra poco.")
         else:
             st.error("Configura la chiave GEMINI_API_KEY nei secrets!")
-
-# --- TAB 3, 4, 5: ALTRE SEZIONI ---
-with tab_preventivi:
-    st.markdown("## 📄 Gestione Preventivi")
-    st.info("Modulo preventivi in aggiornamento.")
-
-with tab_lavori:
-    st.markdown("## 🛠️ Consuntivo Ore Lavorate")
-    st.info("Modulo registrazione ore in aggiornamento.")
-
-with tab_report:
-    st.markdown("## 📊 Report & Analytics")
-    st.info("Modulo reportistica in aggiornamento.")
