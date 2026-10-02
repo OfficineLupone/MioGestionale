@@ -16,7 +16,11 @@ api_key = st.secrets.get("GEMINI_API_KEY", "")
 
 # --- FUNZIONI DI MODIFICA AUTOMATICA ESEGUITE DALL'IA ---
 def aggiungi_settore_ai(nome_settore: str) -> str:
-    """Aggiunge un nuovo settore di lavorazione al gestionale."""
+    """Aggiunge un nuovo settore di lavorazione al gestionale.
+    
+    Args:
+        nome_settore: Il nome del nuovo settore da aggiungere.
+    """
     try:
         conn = get_connection()
         c = conn.cursor()
@@ -28,7 +32,12 @@ def aggiungi_settore_ai(nome_settore: str) -> str:
         return f"Errore nell'aggiunta del settore: {e}"
 
 def rinomina_settore_ai(vecchio_nome: str, nuovo_nome: str) -> str:
-    """Rinomina un settore esistente nel gestionale."""
+    """Rinomina un settore di lavorazione esistente nel gestionale.
+    
+    Args:
+        vecchio_nome: Il nome attuale del settore da modificare.
+        nuovo_nome: Il nuovo nome da assegnare al settore.
+    """
     try:
         conn = get_connection()
         c = conn.cursor()
@@ -43,7 +52,14 @@ def rinomina_settore_ai(vecchio_nome: str, nuovo_nome: str) -> str:
         return f"Errore durante la modifica: {e}"
 
 def aggiorna_prodotto_ai(nome_prodotto: str, ore: float, costo: float, prezzo: float) -> str:
-    """Crea o aggiorna un prodotto con ore, costo interno e prezzo di vendita."""
+    """Crea o aggiorna un prodotto con ore di lavorazione, costo interno e prezzo di vendita.
+    
+    Args:
+        nome_prodotto: Nome del prodotto o servizio.
+        ore: Ore stimate di lavorazione.
+        costo: Costo interno per l'azienda in Euro.
+        prezzo: Prezzo di vendita al cliente in Euro.
+    """
     try:
         conn = get_connection()
         c = conn.cursor()
@@ -51,7 +67,9 @@ def aggiorna_prodotto_ai(nome_prodotto: str, ore: float, costo: float, prezzo: f
             INSERT INTO prodotti (nome, ore_lavorazione, costo_interno, prezzo_vendita)
             VALUES (?, ?, ?, ?)
             ON CONFLICT(nome) DO UPDATE SET
-            ore_lavorazione=excluded.ore_lavorazione, costo_interno=excluded.costo_interno, prezzo_vendita=excluded.prezzo_vendita
+            ore_lavorazione=excluded.ore_lavorazione,
+            costo_interno=excluded.costo_interno,
+            prezzo_vendita=excluded.prezzo_vendita
         """, (nome_prodotto, ore, costo, prezzo))
         conn.commit()
         conn.close()
@@ -59,13 +77,14 @@ def aggiorna_prodotto_ai(nome_prodotto: str, ore: float, costo: float, prezzo: f
     except Exception as e:
         return f"Errore nell'aggiornamento del prodotto: {e}"
 
-# Mappa per l'esecuzione automatica delle funzioni
+# Mappa per l'esecuzione manuale del tool
 tools_map = {
     "aggiungi_settore_ai": aggiungi_settore_ai,
     "rinomina_settore_ai": rinomina_settore_ai,
     "aggiorna_prodotto_ai": aggiorna_prodotto_ai
 }
 
+# Lista di funzioni per Gemini
 tools_list = [aggiungi_settore_ai, rinomina_settore_ai, aggiorna_prodotto_ai]
 
 # --- MENU E INTERFACCIA ---
@@ -81,26 +100,32 @@ if menu == "💬 Assistente Chat IA":
     
     if st.button("Invia Comando") and comando:
         if api_key:
-            client = genai.Client(api_key=api_key)
-            with st.spinner("L'IA sta elaborando la richiesta..."):
-                response = client.models.generate_content(
-                    model="gemini-2.5-flash",
-                    contents=comando,
-                    config=types.GenerateContentConfig(tools=tools_list, temperature=0)
-                )
-                
-                # Se l'IA ha richiesto l'esecuzione di una funzione
-                if response.function_calls:
-                    for call in response.function_calls:
-                        func_name = call.name
-                        func_args = call.args
-                        if func_name in tools_map:
-                            esito = tools_map[func_name](**func_args)
-                            st.success(esito)
-                elif response.text:
-                    st.write(response.text)
-                else:
-                    st.info("Azione eseguita.")
+            try:
+                client = genai.Client(api_key=api_key)
+                with st.spinner("L'IA sta elaborando la richiesta..."):
+                    response = client.models.generate_content(
+                        model="gemini-2.5-flash",
+                        contents=comando,
+                        config=types.GenerateContentConfig(
+                            tools=tools_list,
+                            temperature=0
+                        )
+                    )
+                    
+                    # Gestione dell'esecuzione della funzione
+                    if hasattr(response, 'function_calls') and response.function_calls:
+                        for call in response.function_calls:
+                            func_name = call.name
+                            func_args = call.args
+                            if func_name in tools_map:
+                                esito = tools_map[func_name](**func_args)
+                                st.success(esito)
+                    elif response.text:
+                        st.success(response.text)
+                    else:
+                        st.info("Operazione completata con successo.")
+            except Exception as err:
+                st.error(f"Errore durante l'esecuzione del comando: {err}")
         else:
             st.error("Manca la chiave GEMINI_API_KEY nei Secrets di Streamlit!")
 
