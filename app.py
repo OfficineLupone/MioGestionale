@@ -6,10 +6,10 @@ from google import genai
 from google.genai import types
 import database
 
-# --- 1. CONFIGURAZIONE PAGINA ---
+# --- 1. CONFIGURAZIONE PAGINA E INIZIALIZZAZIONE DB ---
 database.init_db()
 st.set_page_config(
-    page_title="Officine Lupone",
+    page_title="Gestionale IA Enterprise",
     page_icon="⚙️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -54,7 +54,7 @@ def get_connection():
 
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 
-# --- FUNZIONI BACKEND PER IL DATABASE ---
+# --- FUNZIONI BACKEND DB ---
 def aggiungi_settore_db(nome_settore: str) -> str:
     try:
         conn = get_connection()
@@ -64,7 +64,7 @@ def aggiungi_settore_db(nome_settore: str) -> str:
         conn.close()
         return f"✅ Settore '{nome_settore}' aggiunto!"
     except Exception as e:
-        return f"Errore: {e}"
+        return f"Errore durante l'aggiunta: {e}"
 
 def rinomina_settore_db(vecchio_nome: str, nuovo_nome: str) -> str:
     try:
@@ -75,7 +75,7 @@ def rinomina_settore_db(vecchio_nome: str, nuovo_nome: str) -> str:
         conn.close()
         return f"✅ Settore '{vecchio_nome}' rinominato in '{nuovo_nome}'!"
     except Exception as e:
-        return f"Errore: {e}"
+        return f"Errore durante la modifica: {e}"
 
 def elimina_settore_db(nome_settore: str) -> str:
     try:
@@ -84,9 +84,9 @@ def elimina_settore_db(nome_settore: str) -> str:
         c.execute("DELETE FROM settori WHERE nome = ?", (nome_settore,))
         conn.commit()
         conn.close()
-        return f"🗑️ Settore '{nome_settore}' eliminato!"
+        return f"🗑️ Settore '{nome_settore}' eliminato definitivamente!"
     except Exception as e:
-        return f"Errore: {e}"
+        return f"Errore durante l'eliminazione: {e}"
 
 def reset_settori_ai(nuovi_settori: list[str]) -> str:
     try:
@@ -95,12 +95,13 @@ def reset_settori_ai(nuovi_settori: list[str]) -> str:
         c.execute("DELETE FROM settori")
         c.execute("DELETE FROM sqlite_sequence WHERE name='settori'")
         for settore in nuovi_settori:
-            c.execute("INSERT INTO settori (nome) VALUES (?)", (settore.strip(),))
+            if settore.strip():
+                c.execute("INSERT INTO settori (nome) VALUES (?)", (settore.strip(),))
         conn.commit()
         conn.close()
-        return f"✅ Settori resettati! Nuovo ordine: {', '.join(nuovi_settori)}"
+        return f"✅ Settori resettati! Nuova lista: {', '.join(nuovi_settori)}"
     except Exception as e:
-        return f"Errore: {e}"
+        return f"Errore nel reset: {e}"
 
 def aggiorna_prodotto_db(nome_prodotto: str, ore: float, costo: float, prezzo: float) -> str:
     try:
@@ -118,7 +119,7 @@ def aggiorna_prodotto_db(nome_prodotto: str, ore: float, costo: float, prezzo: f
         conn.close()
         return f"✅ Prodotto '{nome_prodotto}' salvato/aggiornato!"
     except Exception as e:
-        return f"Errore: {e}"
+        return f"Errore salvataggio prodotto: {e}"
 
 def elimina_prodotto_db(nome_prodotto: str) -> str:
     try:
@@ -129,9 +130,9 @@ def elimina_prodotto_db(nome_prodotto: str) -> str:
         conn.close()
         return f"🗑️ Prodotto '{nome_prodotto}' eliminato!"
     except Exception as e:
-        return f"Errore: {e}"
+        return f"Errore eliminazione prodotto: {e}"
 
-# Mappature per l'IA
+# Mappatura per le chiamate tool dell'IA
 tools_map = {
     "aggiungi_settore_ai": aggiungi_settore_db,
     "rinomina_settore_ai": rinomina_settore_db,
@@ -143,7 +144,7 @@ tools_list = [aggiungi_settore_db, rinomina_settore_db, reset_settori_ai, aggior
 
 # --- BARRA LATERALE E MENU ---
 with st.sidebar:
-    st.title("⚙️ Officine Lupone")
+    st.title("⚙️ Gestionale AI")
     st.caption("Sistema Gestionale Conversazionale")
     st.divider()
     
@@ -165,7 +166,7 @@ if menu == "💬 Assistente IA":
     with st.container(border=True):
         st.subheader("💡 Esempi di comandi")
         st.markdown("""
-        - *'Reset settori con: Tornitura, Fresatura, Rettifica, EDM, Aggiustaggio, Assemblaggio'*
+        - *'Reset settori con: Tornitura, Fresatura, Rettifica, EDM, Assemblaggio'*
         - *'Aggiungi il settore Trattamenti Termici'*
         - *'Crea il prodotto Stampo Plastica con 25 ore, costo 1500 e prezzo 3200'*
         """)
@@ -176,11 +177,12 @@ if menu == "💬 Assistente IA":
         if api_key:
             client = genai.Client(api_key=api_key)
             response = None
-            # Lista estesa di modelli per evitare l'errore 429 di quota esaurita
-            modelli_da_provare = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.5-pro", "gemini-flash-latest"]
+            
+            # Elenco modelli Gemini stabili ed esistenti
+            modelli_validi = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
             
             with st.spinner("L'IA sta elaborando la richiesta..."):
-                for mod in modelli_da_provare:
+                for mod in modelli_validi:
                     try:
                         response = client.models.generate_content(
                             model=mod,
@@ -192,12 +194,8 @@ if menu == "💬 Assistente IA":
                         )
                         break
                     except Exception as e:
-                        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e) or "503" in str(e) or "UNAVAILABLE" in str(e):
-                            time.sleep(1)
-                            continue
-                        else:
-                            st.error(f"Errore: {e}")
-                            break
+                        # Se il modello dà quota esaurita o non è trovato, prova il successivo
+                        continue
             
             if response:
                 if hasattr(response, 'function_calls') and response.function_calls:
@@ -213,14 +211,14 @@ if menu == "💬 Assistente IA":
                 else:
                     st.info("Operazione completata con successo.")
             else:
-                st.error("Quota limite dell'API temporaneamente raggiunta su tutti i modelli. Riprova più tardi o usa i pulsanti manuali.")
+                st.error("Nessun modello Gemini è riuscito ad elaborare la richiesta. Verifica le tue quote API su Google AI Studio.")
         else:
             st.error("Manca la chiave GEMINI_API_KEY nei Secrets di Streamlit!")
 
 # --- 2. CATALOGO E SETTORI ---
 elif menu == "📦 Catalogo & Settori":
     st.title("📦 Catalogo & Settori Lavorazione")
-    st.write("Gestisci settori e prodotti sia manualmente con i pulsanti sia tramite l'Assistente IA.")
+    st.write("Gestisci settori e prodotti manualmente o tramite l'Assistente IA.")
     
     conn = get_connection()
     df_settori = pd.read_sql_query("SELECT id AS 'ID', nome AS 'Nome Settore' FROM settori", conn)
@@ -262,8 +260,8 @@ elif menu == "📦 Catalogo & Settori":
                             st.rerun()
 
             with c_btn2:
-                with st.popover("✏️ Modifica / 🗑️ Elimina", use_container_width=True):
-                    st.write("**Gestione Settori**")
+                with st.popover("⚙️ Gestisci Settori", use_container_width=True):
+                    st.write("**Modifica o Elimina**")
                     if not df_settori.empty:
                         settore_sel = st.selectbox("Seleziona Settore:", df_settori['Nome Settore'].tolist())
                         nuovo_nome_set = st.text_input("Rinomina in:", value=settore_sel)
@@ -293,7 +291,7 @@ elif menu == "📦 Catalogo & Settori":
             cp_btn1, cp_btn2 = st.columns(2)
             
             with cp_btn1:
-                with st.popover("➕ Aggiungi / Aggiorna Prodotto", use_container_width=True):
+                with st.popover("➕ Aggiungi / Modifica Prodotto", use_container_width=True):
                     st.write("**Dettagli Prodotto**")
                     p_nome = st.text_input("Nome Prodotto:")
                     p_ore = st.number_input("Ore Stimate:", min_value=0.0, step=0.5)
@@ -332,7 +330,7 @@ elif menu == "📦 Catalogo & Settori":
 # --- 3. PREVENTIVI ---
 elif menu == "📄 Preventivi":
     st.title("📄 Generazione Preventivi")
-    st.info("Funzionalità in fase di sviluppo.")
+    st.info("Sezione in fase di implementazione.")
 
 # --- 4. CONSUNTIVO ORE ---
 elif menu == "🛠️ Consuntivo Ore":
@@ -351,4 +349,4 @@ elif menu == "🛠️ Consuntivo Ore":
 # --- 5. REPORT ---
 elif menu == "📊 Report":
     st.title("📊 Report e Analytics")
-    st.info("Funzionalità in fase di sviluppo.")
+    st.info("Sezione in fase di implementazione.")
