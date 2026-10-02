@@ -6,9 +6,13 @@ def init_db():
     
     # Tabelle del gestionale
     c.execute('''CREATE TABLE IF NOT EXISTS settori (id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT UNIQUE NOT NULL)''')
-    c.execute("INSERT OR IGNORE INTO settori (nome) VALUES ('Progettazione')")
-    c.execute("INSERT OR IGNORE INTO settori (nome) VALUES ('Lavorazione')")
-    c.execute("INSERT OR IGNORE INTO settori (nome) VALUES ('Assemblaggio')")
+    
+    # Inserisci i dati iniziali SOLO se la tabella è totalmente vuota (primo avvio in assoluto)
+    c.execute("SELECT COUNT(*) FROM settori")
+    if c.fetchone()[0] == 0:
+        c.execute("INSERT INTO settori (nome) VALUES ('Progettazione')")
+        c.execute("INSERT INTO settori (nome) VALUES ('Lavorazione')")
+        c.execute("INSERT INTO settori (nome) VALUES ('Assemblaggio')")
     
     c.execute('''CREATE TABLE IF NOT EXISTS prodotti (
         id INTEGER PRIMARY KEY AUTOINCREMENT, nome TEXT UNIQUE NOT NULL, 
