@@ -8,7 +8,7 @@ import database
 # --- 1. CONFIGURAZIONE PAGINA ---
 database.init_db()
 st.set_page_config(
-    page_title="OFFICINE LUPONE - Dashboard",
+    page_title="FSL GESTIONALE - Dashboard",
     page_icon="⚙️",
     layout="wide",
     initial_sidebar_state="collapsed"
@@ -17,25 +17,13 @@ st.set_page_config(
 # --- 2. CSS PERSONALIZZATO ISO-DESIGN ---
 st.markdown("""
     <style>
-    /* Sfondo generale grigio chiarissimo/bianco caldo */
     .stApp {
         background-color: #f6f8f7;
     }
-    
-    /* Nascondi elementi di default Streamlit */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    /* Header Superiore */
-    .top-bar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0.5rem 1rem;
-        background-color: #f6f8f7;
-        margin-bottom: 0.5rem;
-    }
     .brand-title {
         font-weight: 800;
         font-size: 1.15rem;
@@ -48,7 +36,6 @@ st.markdown("""
         margin-top: -2px;
     }
     
-    /* Cards KPI / Metriche stile SaaS */
     div[data-testid="stMetric"] {
         background-color: #ffffff;
         border: 1px solid #e2e8f0;
@@ -67,7 +54,6 @@ st.markdown("""
         font-size: 1.8rem !important;
     }
     
-    /* Banner Informativo Beige / Avviso */
     .alert-banner {
         background-color: #fdf8eb;
         border: 1px solid #f2e3c6;
@@ -78,7 +64,6 @@ st.markdown("""
         margin-bottom: 1.2rem;
     }
     
-    /* Pulsanti principali (Verde Scuro scuro) */
     .stButton>button[kind="primary"] {
         background-color: #0e3d2f !important;
         color: #ffffff !important;
@@ -94,7 +79,6 @@ st.markdown("""
         box-shadow: 0 2px 6px rgba(0,0,0,0.15) !important;
     }
     
-    /* Customizzazione Tabs di navigazione */
     .stTabs [data-baseweb="tab-list"] {
         gap: 1.5rem;
         background-color: transparent;
@@ -116,7 +100,6 @@ st.markdown("""
         border-bottom: 3px solid #0e3d2f !important;
     }
     
-    /* Tabelle stilizzate */
     .stDataFrame {
         background-color: #ffffff;
         border-radius: 8px;
@@ -130,7 +113,7 @@ def get_connection():
 
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 
-# --- FUNZIONI BACKEND DB ---
+# --- FUNZIONI BACKEND SETTORI & OPERATORI ---
 def aggiungi_settore_db(nome_settore: str) -> str:
     try:
         conn = get_connection()
@@ -161,6 +144,28 @@ def elimina_settore_db(nome_settore: str) -> str:
         conn.commit()
         conn.close()
         return f"🗑️ Settore '{nome_settore}' eliminato!"
+    except Exception as e:
+        return f"Errore: {e}"
+
+def aggiungi_operatore_db(nome_operatore: str, settore_id: int) -> str:
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("INSERT INTO operatori (nome, settore_id) VALUES (?, ?)", (nome_operatore.strip(), settore_id))
+        conn.commit()
+        conn.close()
+        return f"✅ Operatore '{nome_operatore}' aggiunto!"
+    except Exception as e:
+        return f"Errore: {e}"
+
+def elimina_operatore_db(operatore_id: int) -> str:
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("DELETE FROM operatori WHERE id = ?", (operatore_id,))
+        conn.commit()
+        conn.close()
+        return f"🗑️ Operatore rimosso!"
     except Exception as e:
         return f"Errore: {e}"
 
@@ -231,9 +236,14 @@ with h_left:
 
 st.write("")
 
-# DATI CONDIVISI
+# LETTURA DATI DB
 conn = get_connection()
 df_settori = pd.read_sql_query("SELECT id AS 'ID', nome AS 'Nome Settore' FROM settori", conn)
+df_operatori = pd.read_sql_query("""
+    SELECT o.id AS 'ID', o.nome AS 'Nome Operatore', s.nome AS 'Settore', o.settore_id 
+    FROM operatori o 
+    JOIN settori s ON o.settore_id = s.id
+""", conn)
 df_prodotti = pd.read_sql_query("SELECT id AS 'ID', nome AS 'Prodotto', ore_lavorazione AS 'Ore Stimate', costo_interno AS 'Costo (€)', prezzo_vendita AS 'Prezzo (€)' FROM prodotti", conn)
 conn.close()
 
@@ -252,15 +262,13 @@ with tab_panoramica:
     st.markdown("## Panoramica Generale")
     st.write("")
 
-    # KPI In Alto
     k1, k2, k3, k4 = st.columns(4)
     with k1:
         st.metric("Settori Registrati", len(df_settori))
     with k2:
-        st.metric("Prodotti a Catalogo", len(df_prodotti))
+        st.metric("Operatori Totali", len(df_operatori))
     with k3:
-        tot_ore = df_prodotti['Ore Stimate'].sum() if not df_prodotti.empty else 0
-        st.metric("Ore Totali Stimate", f"{tot_ore:.1f} h")
+        st.metric("Prodotti a Catalogo", len(df_prodotti))
     with k4:
         margine = (df_prodotti['Prezzo (€)'] - df_prodotti['Costo (€)']).mean() if not df_prodotti.empty else 0
         st.metric("Margine Medio / Prod.", f"€ {margine:,.2f}")
@@ -279,15 +287,19 @@ with tab_panoramica:
         st.markdown("### 🏬 Ultimi Settori")
         st.dataframe(df_settori, use_container_width=True, hide_index=True)
     with c_right:
-        st.markdown("### 📋 Anteprima Catalogo")
-        st.dataframe(df_prodotti.head(5), use_container_width=True, hide_index=True)
+        st.markdown("### 👷‍♂️ Operatori per Settore")
+        if not df_operatori.empty:
+            st.dataframe(df_operatori[['Nome Operatore', 'Settore']], use_container_width=True, hide_index=True)
+        else:
+            st.info("Nessun operatore assegnato.")
 
 # --- 2. SETTORI PRODUTTIVI ---
 with tab_settori:
-    st.markdown("## 🏬 Gestione Settori Produttivi")
-    st.write("Aggiungi, modifica o elimina i settori di lavorazione.")
+    st.markdown("## 🏬 Gestione Settori & Operatori")
+    st.write("Configura i settori di lavorazione e assegna gli operatori qualificati.")
     
-    col_s1, col_s2, col_s3 = st.columns(3)
+    # PULSANTI DI GESTIONE SETTORI
+    col_s1, col_s2, col_s3, col_s4 = st.columns(4)
     
     with col_s1:
         with st.popover("➕ Nuovo Settore", use_container_width=True):
@@ -310,7 +322,7 @@ with tab_settori:
                 st.info("Nessun settore presente.")
 
     with col_s3:
-        with st.popover("🗑️ Elimina Settore", use_container_width=True):
+        with st.popover("🗑️️ Elimina Settore", use_container_width=True):
             if not df_settori.empty:
                 s_del = st.selectbox("Seleziona da eliminare:", df_settori['Nome Settore'].tolist(), key="set_del_sel")
                 if st.button("Conferma Eliminazione", type="secondary", key="btn_del_s"):
@@ -319,8 +331,48 @@ with tab_settori:
             else:
                 st.info("Nessun settore presente.")
 
+    with col_s4:
+        with st.popover("👷‍♂️ Aggiungi Operatore", use_container_width=True):
+            st.write("**Nuovo Operatore**")
+            if not df_settori.empty:
+                set_target = st.selectbox("Assegna al Settore:", df_settori['Nome Settore'].tolist(), key="op_set_target")
+                op_nome = st.text_input("Nome e Cognome Operatore:", key="op_name_input")
+                if st.button("Salva Operatore", type="primary", key="btn_add_op"):
+                    if op_nome:
+                        s_id = df_settori[df_settori['Nome Settore'] == set_target]['ID'].values[0]
+                        aggiungi_operatore_db(op_nome, int(s_id))
+                        st.rerun()
+            else:
+                st.info("Crea prima almeno un settore.")
+
     st.write("")
-    st.dataframe(df_settori, use_container_width=True, hide_index=True)
+    
+    # VISUALIZZAZIONE SCHEDE SETTORI CON OPERATORI
+    if not df_settori.empty:
+        col_m1, col_m2 = st.columns(2)
+        for i, row in df_settori.iterrows():
+            target_col = col_m1 if i % 2 == 0 else col_m2
+            with target_col:
+                with st.container(border=True):
+                    st.markdown(f"### 🏭 {row['Nome Settore']}")
+                    
+                    # Filtra gli operatori di questo settore
+                    ops = df_operatori[df_operatori['settore_id'] == row['ID']] if not df_operatori.empty else pd.DataFrame()
+                    
+                    if not ops.empty:
+                        st.write("**Operatori Assegnati:**")
+                        for _, op_row in ops.iterrows():
+                            c_op1, c_op2 = st.columns([4, 1])
+                            with c_op1:
+                                st.write(f"• 👤 **{op_row['Nome Operatore']}**")
+                            with c_op2:
+                                if st.button("🗑️", key=f"del_op_{op_row['ID']}", help="Rimuovi operatore"):
+                                    elimina_operatore_db(op_row['ID'])
+                                    st.rerun()
+                    else:
+                        st.caption("Nessun operatore inserito per questo settore.")
+    else:
+        st.info("Nessun settore disponibile.")
 
 # --- 3. CATALOGO PRODOTTI ---
 with tab_prodotti:
