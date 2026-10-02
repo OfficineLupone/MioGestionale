@@ -104,7 +104,7 @@ if menu == "💬 Assistente Chat IA":
                 client = genai.Client(api_key=api_key)
                 with st.spinner("L'IA sta elaborando la richiesta..."):
                     response = client.models.generate_content(
-                        model="gemini-2.5-flash",
+                        model="gemini-2.0-flash",
                         contents=comando,
                         config=types.GenerateContentConfig(
                             tools=tools_list,
