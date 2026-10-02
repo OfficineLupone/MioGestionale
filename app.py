@@ -78,6 +78,25 @@ elif menu == "📦 Catalogo & Settori":
         st.subheader("Catalogo Prodotti")
         st.dataframe(pd.read_sql_query("SELECT * FROM prodotti", conn), use_container_width=True)
     conn.close()
+    
+    # Aggiungi questa nuova funzione nel codice:
+def rinomina_settore_ai(vecchio_nome: str, nuovo_nome: str) -> str:
+    """Rinomina un settore esistente nel gestionale."""
+    try:
+        conn = get_connection()
+        c = conn.cursor()
+        c.execute("UPDATE settori SET nome = ? WHERE nome = ?", (nuovo_nome, vecchio_nome))
+        if c.rowcount == 0:
+            conn.close()
+            return f"⚠️ Nessun settore trovato con il nome '{vecchio_nome}'."
+        conn.commit()
+        conn.close()
+        return f"✅ Settore '{vecchio_nome}' rinominato con successo in '{nuovo_nome}'!"
+    except Exception as e:
+        return f"Errore durante la modifica: {e}"
+
+# Aggiorna la lista dei tool messi a disposizione dell'IA:
+tools_list = [aggiungi_settore_ai, rinomina_settore_ai, aggiorna_prodotto_ai]
 
 # 3. PREVENTIVI
 elif menu == "📄 Preventivi":
