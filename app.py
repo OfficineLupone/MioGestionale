@@ -118,7 +118,7 @@ def aggiungi_settore_db(nome_settore: str) -> str:
     try:
         conn = database.get_connection()
         c = conn.cursor()
-        c.execute("INSERT INTO settori (nome) VALUES (%s)", (nome_settore.strip(),))
+        c.execute("INSERT INTO settori (nome) VALUES (%s) ON CONFLICT (nome) DO NOTHING;", (nome_settore.strip(),))
         conn.commit()
         conn.close()
         return f"✅ Settore '{nome_settore}' aggiunto!"
@@ -188,7 +188,6 @@ def salva_prodotto_esteso(particolare: str, mat_tratt: str, macch_gruppo: str, d
         conn = database.get_connection()
         c = conn.cursor()
         
-        # Inserisci o aggiorna il prodotto
         c.execute("""
             INSERT INTO prodotti (nome, materiale_trattamento, macchina_gruppo_formato, disegno, costo_interno, prezzo_vendita)
             VALUES (%s, %s, %s, %s, %s, %s)
@@ -203,7 +202,6 @@ def salva_prodotto_esteso(particolare: str, mat_tratt: str, macch_gruppo: str, d
         
         prodotto_id = c.fetchone()[0]
         
-        # Aggiorna le ore per ciascun settore
         for settore_id, ore in ore_settori.items():
             c.execute("""
                 INSERT INTO prodotto_ore_settori (prodotto_id, settore_id, ore)
@@ -252,15 +250,14 @@ st.write("")
 
 # LETTURA DATI DB
 try:
-    conn = database.get_connection()
-    df_settori = pd.read_sql_query('SELECT id AS "ID", nome AS "Nome Settore" FROM settori ORDER BY id', conn)
+    db_uri = database.get_db_uri()
+    df_settori = pd.read_sql_query('SELECT id AS "ID", nome AS "Nome Settore" FROM settori ORDER BY id', db_uri)
     df_operatori = pd.read_sql_query('''
         SELECT o.id AS "ID", o.nome AS "Nome Operatore", s.nome AS "Settore", o.settore_id 
         FROM operatori o 
         JOIN settori s ON o.settore_id = s.id ORDER BY o.id
-    ''', conn)
+    ''', db_uri)
     
-    # Query prodotti completa con totale ore stimate
     query_prodotti = '''
         SELECT 
             p.id AS "ID",
@@ -276,8 +273,7 @@ try:
         GROUP BY p.id, p.nome, p.materiale_trattamento, p.macchina_gruppo_formato, p.disegno, p.costo_interno, p.prezzo_vendita
         ORDER BY p.id;
     '''
-    df_prodotti = pd.read_sql_query(query_prodotti, conn)
-    conn.close()
+    df_prodotti = pd.read_sql_query(query_prodotti, db_uri)
 except Exception:
     df_settori = pd.DataFrame(columns=['ID', 'Nome Settore'])
     df_operatori = pd.DataFrame(columns=['ID', 'Nome Operatore', 'Settore', 'settore_id'])
@@ -337,37 +333,40 @@ with tab_settori:
     col_s1, col_s2, col_s3, col_s4 = st.columns(4)
     
     with col_s1:
-        with st.popover("➕ Nuovo Settore", use_container_width=True):
+        with st.popover("➕ Nuovo Settore", width="stretch"):
             st.write("**Aggiungi Settore**")
             nuovo_s = st.text_input("Nome Settore:", key="set_add_input")
             if st.button("Salva Settore", type="primary", key="btn_add_s"):
                 if nuovo_s:
-                    aggiungi_settore_db(nuovo_s)
+                    msg = aggiungi_settore_db(nuovo_s)
+                    st.toast(msg)
                     st.rerun()
 
     with col_s2:
-        with st.popover("✏️ Rinomina Settore", use_container_width=True):
+        with st.popover("✏️ Rinomina Settore", width="stretch"):
             if not df_settori.empty:
                 s_sel = st.selectbox("Seleziona da rinominare:", df_settori['Nome Settore'].tolist(), key="set_ren_sel")
                 s_new = st.text_input("Nuovo nome:", value=s_sel, key="set_ren_txt")
                 if st.button("Conferma Rinomina", type="primary", key="btn_ren_s"):
-                    rinomina_settore_db(s_sel, s_new)
+                    msg = rinomina_settore_db(s_sel, s_new)
+                    st.toast(msg)
                     st.rerun()
             else:
                 st.info("Nessun settore presente.")
 
     with col_s3:
-        with st.popover("🗑 Elimina Settore", use_container_width=True):
+        with st.popover("🗑 Elimina Settore", width="stretch"):
             if not df_settori.empty:
                 s_del = st.selectbox("Seleziona da eliminare:", df_settori['Nome Settore'].tolist(), key="set_del_sel")
                 if st.button("Conferma Eliminazione", type="secondary", key="btn_del_s"):
-                    elimina_settore_db(s_del)
+                    msg = elimina_settore_db(s_del)
+                    st.toast(msg)
                     st.rerun()
             else:
                 st.info("Nessun settore presente.")
 
     with col_s4:
-        with st.popover("👷‍♂️ Aggiungi Operatore", use_container_width=True):
+        with st.popover("👷‍♂️ Aggiungi Operatore", width="stretch"):
             st.write("**Nuovo Operatore**")
             if not df_settori.empty:
                 set_target = st.selectbox("Assegna al Settore:", df_settori['Nome Settore'].tolist(), key="op_set_target")
@@ -375,7 +374,8 @@ with tab_settori:
                 if st.button("Salva Operatore", type="primary", key="btn_add_op"):
                     if op_nome:
                         s_id = df_settori[df_settori['Nome Settore'] == set_target]['ID'].values[0]
-                        aggiungi_operatore_db(op_nome, int(s_id))
+                        msg = aggiungi_operatore_db(op_nome, int(s_id))
+                        st.toast(msg)
                         st.rerun()
             else:
                 st.info("Crea prima almeno un settore.")
@@ -400,7 +400,8 @@ with tab_settori:
                                 st.write(f"• 👤 **{op_row['Nome Operatore']}**")
                             with c_op2:
                                 if st.button("🗑️", key=f"del_op_{op_row['ID']}", help="Rimuovi operatore"):
-                                    elimina_operatore_db(op_row['ID'])
+                                    msg = elimina_operatore_db(op_row['ID'])
+                                    st.toast(msg)
                                     st.rerun()
                     else:
                         st.caption("Nessun operatore inserito per questo settore.")
@@ -414,7 +415,7 @@ with tab_prodotti:
 
     cp1, cp2 = st.columns(2)
     with cp1:
-        with st.popover("➕ Aggiungi Prodotto Completo", use_container_width=True):
+        with st.popover("➕ Aggiungi Prodotto Completo", width="stretch"):
             st.markdown("### 📝 Dettagli Prodotto / Particolare")
             
             p_particolare = st.text_input("Particolare (Nome Prodotto):", key="inp_part")
@@ -454,17 +455,18 @@ with tab_prodotti:
                         p_prezzo, 
                         ore_settori_dict
                     )
-                    st.success(esito)
+                    st.toast(esito)
                     st.rerun()
                 else:
                     st.error("Il campo 'Particolare' è obbligatorio!")
 
     with cp2:
-        with st.popover("🗑️ Elimina Prodotto", use_container_width=True):
+        with st.popover("🗑️ Elimina Prodotto", width="stretch"):
             if not df_prodotti.empty:
                 pr_del = st.selectbox("Seleziona Prodotto:", df_prodotti['Particolare'].tolist(), key="p_del_sel")
                 if st.button("Conferma Eliminazione", type="secondary", key="btn_del_p"):
-                    elimina_prodotto_db(pr_del)
+                    msg = elimina_prodotto_db(pr_del)
+                    st.toast(msg)
                     st.rerun()
             else:
                 st.info("Nessun prodotto a catalogo.")
