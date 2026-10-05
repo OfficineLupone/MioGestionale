@@ -115,116 +115,163 @@ api_key = st.secrets.get("GEMINI_API_KEY", "")
 
 # --- FUNZIONI BACKEND DB ---
 def aggiungi_settore_db(nome_settore: str) -> str:
+    if not nome_settore or not nome_settore.strip():
+        return "❌ Il nome del settore non può essere vuoto!"
+    conn = None
     try:
         conn = database.get_connection()
-        c = conn.cursor()
-        c.execute("INSERT INTO settori (nome) VALUES (%s) ON CONFLICT (nome) DO NOTHING;", (nome_settore.strip(),))
+        with conn.cursor() as c:
+            c.execute("INSERT INTO settori (nome) VALUES (%s) ON CONFLICT (nome) DO NOTHING;", (nome_settore.strip(),))
         conn.commit()
-        conn.close()
         return f"✅ Settore '{nome_settore}' aggiunto!"
     except Exception as e:
-        return f"Errore: {e}"
+        if conn:
+            conn.rollback()
+        return f"❌ Errore durante l'inserimento: {e}"
+    finally:
+        if conn:
+            conn.close()
 
 def rinomina_settore_db(vecchio_nome: str, nuovo_nome: str) -> str:
+    if not nuovo_nome or not nuovo_nome.strip():
+        return "❌ Il nuovo nome non può essere vuoto!"
+    conn = None
     try:
         conn = database.get_connection()
-        c = conn.cursor()
-        c.execute("UPDATE settori SET nome = %s WHERE nome = %s", (nuovo_nome.strip(), vecchio_nome))
+        with conn.cursor() as c:
+            c.execute("UPDATE settori SET nome = %s WHERE nome = %s", (nuovo_nome.strip(), vecchio_nome))
         conn.commit()
-        conn.close()
         return f"✅ Settore '{vecchio_nome}' rinominato in '{nuovo_nome}'!"
     except Exception as e:
-        return f"Errore: {e}"
+        if conn:
+            conn.rollback()
+        return f"❌ Errore: {e}"
+    finally:
+        if conn:
+            conn.close()
 
 def elimina_settore_db(nome_settore: str) -> str:
+    conn = None
     try:
         conn = database.get_connection()
-        c = conn.cursor()
-        c.execute("DELETE FROM settori WHERE nome = %s", (nome_settore,))
+        with conn.cursor() as c:
+            c.execute("DELETE FROM settori WHERE nome = %s", (nome_settore,))
         conn.commit()
-        conn.close()
         return f"🗑️ Settore '{nome_settore}' eliminato!"
     except Exception as e:
-        return f"Errore: {e}"
+        if conn:
+            conn.rollback()
+        return f"❌ Errore: {e}"
+    finally:
+        if conn:
+            conn.close()
 
 def aggiungi_operatore_db(nome_operatore: str, settore_id: int) -> str:
+    if not nome_operatore or not nome_operatore.strip():
+        return "❌ Il nome dell'operatore non può essere vuoto!"
+    conn = None
     try:
         conn = database.get_connection()
-        c = conn.cursor()
-        c.execute("INSERT INTO operatori (nome, settore_id) VALUES (%s, %s)", (nome_operatore.strip(), settore_id))
+        with conn.cursor() as c:
+            c.execute("INSERT INTO operatori (nome, settore_id) VALUES (%s, %s)", (nome_operatore.strip(), settore_id))
         conn.commit()
-        conn.close()
         return f"✅ Operatore '{nome_operatore}' aggiunto!"
     except Exception as e:
-        return f"Errore: {e}"
+        if conn:
+            conn.rollback()
+        return f"❌ Errore: {e}"
+    finally:
+        if conn:
+            conn.close()
 
 def elimina_operatore_db(operatore_id: int) -> str:
+    conn = None
     try:
         conn = database.get_connection()
-        c = conn.cursor()
-        c.execute("DELETE FROM operatori WHERE id = %s", (operatore_id,))
+        with conn.cursor() as c:
+            c.execute("DELETE FROM operatori WHERE id = %s", (operatore_id,))
         conn.commit()
-        conn.close()
         return f"🗑️ Operatore rimosso!"
     except Exception as e:
-        return f"Errore: {e}"
+        if conn:
+            conn.rollback()
+        return f"❌ Errore: {e}"
+    finally:
+        if conn:
+            conn.close()
 
 def reset_settori_ai(nuovi_settori: list[str]) -> str:
+    conn = None
     try:
         conn = database.get_connection()
-        c = conn.cursor()
-        c.execute("TRUNCATE TABLE settori RESTART IDENTITY CASCADE")
-        for settore in nuovi_settori:
-            if settore.strip():
-                c.execute("INSERT INTO settori (nome) VALUES (%s)", (settore.strip(),))
+        with conn.cursor() as c:
+            c.execute("TRUNCATE TABLE settori RESTART IDENTITY CASCADE")
+            for settore in nuovi_settori:
+                if settore.strip():
+                    c.execute("INSERT INTO settori (nome) VALUES (%s)", (settore.strip(),))
         conn.commit()
-        conn.close()
         return f"✅ Settori resettati: {', '.join(nuovi_settori)}"
     except Exception as e:
-        return f"Errore: {e}"
+        if conn:
+            conn.rollback()
+        return f"❌ Errore: {e}"
+    finally:
+        if conn:
+            conn.close()
 
 def salva_prodotto_esteso(particolare: str, mat_tratt: str, macch_gruppo: str, disegno: str, costo: float, prezzo: float, ore_settori: dict) -> str:
+    if not particolare or not particolare.strip():
+        return "❌ Il campo 'Particolare' è obbligatorio!"
+    conn = None
     try:
         conn = database.get_connection()
-        c = conn.cursor()
-        
-        c.execute("""
-            INSERT INTO prodotti (nome, materiale_trattamento, macchina_gruppo_formato, disegno, costo_interno, prezzo_vendita)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT(nome) DO UPDATE SET
-            materiale_trattamento=EXCLUDED.materiale_trattamento,
-            macchina_gruppo_formato=EXCLUDED.macchina_gruppo_formato,
-            disegno=EXCLUDED.disegno,
-            costo_interno=EXCLUDED.costo_interno,
-            prezzo_vendita=EXCLUDED.prezzo_vendita
-            RETURNING id;
-        """, (particolare.strip(), mat_tratt.strip(), macch_gruppo.strip(), disegno.strip(), costo, prezzo))
-        
-        prodotto_id = c.fetchone()[0]
-        
-        for settore_id, ore in ore_settori.items():
+        with conn.cursor() as c:
             c.execute("""
-                INSERT INTO prodotto_ore_settori (prodotto_id, settore_id, ore)
-                VALUES (%s, %s, %s)
-                ON CONFLICT(prodotto_id, settore_id) DO UPDATE SET ore=EXCLUDED.ore;
-            """, (prodotto_id, settore_id, ore))
+                INSERT INTO prodotti (nome, materiale_trattamento, macchina_gruppo_formato, disegno, costo_interno, prezzo_vendita)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT(nome) DO UPDATE SET
+                materiale_trattamento=EXCLUDED.materiale_trattamento,
+                macchina_gruppo_formato=EXCLUDED.macchina_gruppo_formato,
+                disegno=EXCLUDED.disegno,
+                costo_interno=EXCLUDED.costo_interno,
+                prezzo_vendita=EXCLUDED.prezzo_vendita
+                RETURNING id;
+            """, (particolare.strip(), mat_tratt.strip(), macch_gruppo.strip(), disegno.strip(), costo, prezzo))
             
+            prodotto_id = c.fetchone()[0]
+            
+            for settore_id, ore in ore_settori.items():
+                c.execute("""
+                    INSERT INTO prodotto_ore_settori (prodotto_id, settore_id, ore)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT(prodotto_id, settore_id) DO UPDATE SET ore=EXCLUDED.ore;
+                """, (prodotto_id, settore_id, ore))
+                
         conn.commit()
-        conn.close()
         return f"✅ Prodotto '{particolare}' salvato con successo!"
     except Exception as e:
-        return f"Errore durante il salvataggio: {e}"
+        if conn:
+            conn.rollback()
+        return f"❌ Errore durante il salvataggio: {e}"
+    finally:
+        if conn:
+            conn.close()
 
 def elimina_prodotto_db(nome_prodotto: str) -> str:
+    conn = None
     try:
         conn = database.get_connection()
-        c = conn.cursor()
-        c.execute("DELETE FROM prodotti WHERE nome = %s", (nome_prodotto,))
+        with conn.cursor() as c:
+            c.execute("DELETE FROM prodotti WHERE nome = %s", (nome_prodotto,))
         conn.commit()
-        conn.close()
         return f"🗑️ Prodotto '{nome_prodotto}' eliminato!"
     except Exception as e:
-        return f"Errore: {e}"
+        if conn:
+            conn.rollback()
+        return f"❌ Errore: {e}"
+    finally:
+        if conn:
+            conn.close()
 
 tools_map = {
     "aggiungi_settore_ai": aggiungi_settore_db,
@@ -275,7 +322,8 @@ def carica_dati():
             ORDER BY p.id;
         '''
         df_prodotti = pd.read_sql_query(query_prodotti, db_uri)
-    except Exception:
+    except Exception as err:
+        st.error(f"Errore lettura dati: {err}")
         df_settori = pd.DataFrame(columns=['ID', 'Nome Settore'])
         df_operatori = pd.DataFrame(columns=['ID', 'Nome Operatore', 'Settore', 'settore_id'])
         df_prodotti = pd.DataFrame(columns=['ID', 'Particolare', 'Materiale / Trattamento', 'Macchina / Gruppo / Formato', 'Disegno', 'Ore Totali', 'Costo (€)', 'Prezzo (€)'])
@@ -321,12 +369,10 @@ with tab_panoramica:
     c_left, c_right = st.columns(2)
     with c_left:
         st.markdown("### 🏬 Ultimi Settori")
-        # Sostituito use_container_width=True con width="stretch"
         st.dataframe(df_settori, width="stretch", hide_index=True)
     with c_right:
         st.markdown("### 👷‍♂️ Operatori per Settore")
         if not df_operatori.empty:
-            # Sostituito use_container_width=True con width="stretch"
             st.dataframe(df_operatori[['Nome Operatore', 'Settore']], width="stretch", hide_index=True)
         else:
             st.info("Nessun operatore assegnato.")
@@ -372,7 +418,7 @@ with tab_settori:
                 st.info("Nessun settore presente.")
 
     with col_s4:
-        with st.popover("👷‍♂️ Aggiungi Operatore", width="stretch"):
+        with st.popover("👷‍♂️️ Aggiungi Operatore", width="stretch"):
             st.write("**Nuovo Operatore**")
             if not df_settori.empty:
                 set_target = st.selectbox("Assegna al Settore:", df_settori['Nome Settore'].tolist(), key="op_set_target")
@@ -467,7 +513,7 @@ with tab_prodotti:
                     st.error("Il campo 'Particolare' è obbligatorio!")
 
     with cp2:
-        with st.popover("🗑️ Elimina Prodotto", width="stretch"):
+        with st.popover("🗑️️ Elimina Prodotto", width="stretch"):
             if not df_prodotti.empty:
                 pr_del = st.selectbox("Seleziona Prodotto:", df_prodotti['Particolare'].tolist(), key="p_del_sel")
                 if st.button("Conferma Eliminazione", type="secondary", key="btn_del_p"):
@@ -479,7 +525,6 @@ with tab_prodotti:
 
     st.write("")
     
-    # Sostituito use_container_width=True con width="stretch"
     st.dataframe(
         df_prodotti, 
         width="stretch", 
@@ -511,7 +556,7 @@ with tab_assistente:
         if api_key:
             client = genai.Client(api_key=api_key)
             response = None
-            modelli_validi = ["gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+            modelli_validi = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
             
             with st.spinner("Elaborazione in corso..."):
                 for mod in modelli_validi:
