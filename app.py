@@ -248,36 +248,40 @@ with h_left:
 
 st.write("")
 
-# LETTURA DATI DB
-try:
-    db_uri = database.get_db_uri()
-    df_settori = pd.read_sql_query('SELECT id AS "ID", nome AS "Nome Settore" FROM settori ORDER BY id', db_uri)
-    df_operatori = pd.read_sql_query('''
-        SELECT o.id AS "ID", o.nome AS "Nome Operatore", s.nome AS "Settore", o.settore_id 
-        FROM operatori o 
-        JOIN settori s ON o.settore_id = s.id ORDER BY o.id
-    ''', db_uri)
-    
-    query_prodotti = '''
-        SELECT 
-            p.id AS "ID",
-            p.nome AS "Particolare",
-            p.materiale_trattamento AS "Materiale / Trattamento",
-            p.macchina_gruppo_formato AS "Macchina / Gruppo / Formato",
-            p.disegno AS "Disegno",
-            COALESCE(SUM(pos.ore), 0) AS "Ore Totali",
-            p.costo_interno AS "Costo (€)",
-            p.prezzo_vendita AS "Prezzo (€)"
-        FROM prodotti p
-        LEFT JOIN prodotto_ore_settori pos ON p.id = pos.prodotto_id
-        GROUP BY p.id, p.nome, p.materiale_trattamento, p.macchina_gruppo_formato, p.disegno, p.costo_interno, p.prezzo_vendita
-        ORDER BY p.id;
-    '''
-    df_prodotti = pd.read_sql_query(query_prodotti, db_uri)
-except Exception:
-    df_settori = pd.DataFrame(columns=['ID', 'Nome Settore'])
-    df_operatori = pd.DataFrame(columns=['ID', 'Nome Operatore', 'Settore', 'settore_id'])
-    df_prodotti = pd.DataFrame(columns=['ID', 'Particolare', 'Materiale / Trattamento', 'Macchina / Gruppo / Formato', 'Disegno', 'Ore Totali', 'Costo (€)', 'Prezzo (€)'])
+# LETTURA DATI DB (Eseguita ad ogni ricaricamento)
+def carica_dati():
+    try:
+        db_uri = database.get_db_uri()
+        df_settori = pd.read_sql_query('SELECT id AS "ID", nome AS "Nome Settore" FROM settori ORDER BY id', db_uri)
+        df_operatori = pd.read_sql_query('''
+            SELECT o.id AS "ID", o.nome AS "Nome Operatore", s.nome AS "Settore", o.settore_id 
+            FROM operatori o 
+            JOIN settori s ON o.settore_id = s.id ORDER BY o.id
+        ''', db_uri)
+        
+        query_prodotti = '''
+            SELECT 
+                p.id AS "ID",
+                p.nome AS "Particolare",
+                p.materiale_trattamento AS "Materiale / Trattamento",
+                p.macchina_gruppo_formato AS "Macchina / Gruppo / Formato",
+                p.disegno AS "Disegno",
+                COALESCE(SUM(pos.ore), 0) AS "Ore Totali",
+                p.costo_interno AS "Costo (€)",
+                p.prezzo_vendita AS "Prezzo (€)"
+            FROM prodotti p
+            LEFT JOIN prodotto_ore_settori pos ON p.id = pos.prodotto_id
+            GROUP BY p.id, p.nome, p.materiale_trattamento, p.macchina_gruppo_formato, p.disegno, p.costo_interno, p.prezzo_vendita
+            ORDER BY p.id;
+        '''
+        df_prodotti = pd.read_sql_query(query_prodotti, db_uri)
+    except Exception:
+        df_settori = pd.DataFrame(columns=['ID', 'Nome Settore'])
+        df_operatori = pd.DataFrame(columns=['ID', 'Nome Operatore', 'Settore', 'settore_id'])
+        df_prodotti = pd.DataFrame(columns=['ID', 'Particolare', 'Materiale / Trattamento', 'Macchina / Gruppo / Formato', 'Disegno', 'Ore Totali', 'Costo (€)', 'Prezzo (€)'])
+    return df_settori, df_operatori, df_prodotti
+
+df_settori, df_operatori, df_prodotti = carica_dati()
 
 # --- 4. TABS ---
 tab_panoramica, tab_settori, tab_prodotti, tab_preventivi, tab_report, tab_assistente = st.tabs([
@@ -317,11 +321,13 @@ with tab_panoramica:
     c_left, c_right = st.columns(2)
     with c_left:
         st.markdown("### 🏬 Ultimi Settori")
-        st.dataframe(df_settori, use_container_width=True, hide_index=True)
+        # Sostituito use_container_width=True con width="stretch"
+        st.dataframe(df_settori, width="stretch", hide_index=True)
     with c_right:
         st.markdown("### 👷‍♂️ Operatori per Settore")
         if not df_operatori.empty:
-            st.dataframe(df_operatori[['Nome Operatore', 'Settore']], use_container_width=True, hide_index=True)
+            # Sostituito use_container_width=True con width="stretch"
+            st.dataframe(df_operatori[['Nome Operatore', 'Settore']], width="stretch", hide_index=True)
         else:
             st.info("Nessun operatore assegnato.")
 
@@ -473,9 +479,10 @@ with tab_prodotti:
 
     st.write("")
     
+    # Sostituito use_container_width=True con width="stretch"
     st.dataframe(
         df_prodotti, 
-        use_container_width=True, 
+        width="stretch", 
         hide_index=True,
         column_config={
             "Costo (€)": st.column_config.NumberColumn(format="€ %.2f"),
