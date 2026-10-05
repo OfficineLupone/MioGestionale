@@ -7,7 +7,7 @@ import database
 # --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(
     page_title="OFFICINE LUPONE - Dashboard",
-    page_icon="⚙️",
+    page_icon="⚙️️",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -139,13 +139,35 @@ def reset_settori_ai(nuovi_settori: list[str]) -> str:
     except Exception as e:
         return f"❌ Errore: {e}"
 
-def salva_prodotto_esteso(particolare: str, mat_tratt: str, macch_gruppo: str, disegno: str, costo: float, prezzo: float, ore_settori: dict) -> str:
+def salva_prodotto_esteso(
+    particolare: str,
+    mat_tratt: str = "",
+    macch_gruppo: str = "",
+    disegno: str = "",
+    costo: float = 0.0,
+    prezzo: float = 0.0,
+    ore_settori: dict = None
+) -> str:
     """
     Crea o aggiorna un prodotto con tutti i suoi dettagli e le ore assegnate per settore.
-    `ore_settori` è un dizionario con chiavi ID settore (int) e valori ore (float). Es: {1: 2.5, 2: 4.0}
+    `ore_settori` è un dizionario con chiavi ID settore (int o str) e valori ore (float). Es: {1: 2.5, 2: 4.0}
     """
-    if not particolare or not particolare.strip():
+    if not particolare or not str(particolare).strip():
         return "❌ Il campo 'Particolare' è obbligatorio!"
+
+    # Normalizzazione e pulizia dei valori per evitare AttributeError su NoneType
+    particolare = str(particolare).strip()
+    mat_tratt = str(mat_tratt or "").strip()
+    macch_gruppo = str(macch_gruppo or "").strip()
+    disegno = str(disegno or "").strip()
+    
+    # Conversione sicura dei valori numerici
+    try:
+        costo_val = float(costo or 0.0)
+        prezzo_val = float(prezzo or 0.0)
+    except (ValueError, TypeError):
+        return "❌ I campi 'Costo' e 'Prezzo' devono essere numeri validi!"
+
     try:
         with database.get_connection() as conn:
             with conn.cursor() as c:
@@ -153,28 +175,40 @@ def salva_prodotto_esteso(particolare: str, mat_tratt: str, macch_gruppo: str, d
                     INSERT INTO prodotti (nome, materiale_trattamento, macchina_gruppo_formato, disegno, costo_interno, prezzo_vendita)
                     VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT(nome) DO UPDATE SET
-                    materiale_trattamento=EXCLUDED.materiale_trattamento,
-                    macchina_gruppo_formato=EXCLUDED.macchina_gruppo_formato,
-                    disegno=EXCLUDED.disegno,
-                    costo_interno=EXCLUDED.costo_interno,
-                    prezzo_vendita=EXCLUDED.prezzo_vendita
+                        materiale_trattamento = EXCLUDED.materiale_trattamento,
+                        macchina_gruppo_formato = EXCLUDED.macchina_gruppo_formato,
+                        disegno = EXCLUDED.disegno,
+                        costo_interno = EXCLUDED.costo_interno,
+                        prezzo_vendita = EXCLUDED.prezzo_vendita
                     RETURNING id;
-                """, (particolare.strip(), mat_tratt.strip(), macch_gruppo.strip(), disegno.strip(), float(costo), float(prezzo)))
+                """, (particolare, mat_tratt, macch_gruppo, disegno, costo_val, prezzo_val))
                 
-                prodotto_id = c.fetchone()[0]
+                res = c.fetchone()
+                if not res:
+                    return "❌ Errore durante il recupero dell'ID del prodotto."
+                prodotto_id = res[0]
                 
+                # Gestione sicura delle ore per settore
                 if isinstance(ore_settori, dict):
                     for settore_id, ore in ore_settori.items():
-                        s_id = int(settore_id)
-                        val_ore = float(ore)
+                        try:
+                            s_id = int(settore_id)
+                            val_ore = float(ore or 0.0)
+                        except (ValueError, TypeError):
+                            continue
+
                         if val_ore > 0:
                             c.execute("""
                                 INSERT INTO prodotto_ore_settori (prodotto_id, settore_id, ore)
                                 VALUES (%s, %s, %s)
-                                ON CONFLICT(prodotto_id, settore_id) DO UPDATE SET ore=EXCLUDED.ore;
+                                ON CONFLICT(prodotto_id, settore_id) DO UPDATE SET ore = EXCLUDED.ore;
                             """, (prodotto_id, s_id, val_ore))
                         else:
-                            c.execute("DELETE FROM prodotto_ore_settori WHERE prodotto_id = %s AND settore_id = %s;", (prodotto_id, s_id))
+                            c.execute("""
+                                DELETE FROM prodotto_ore_settori 
+                                WHERE prodotto_id = %s AND settore_id = %s;
+                            """, (prodotto_id, s_id))
+
             conn.commit()
         return f"✅ Prodotto '{particolare}' salvato con successo!"
     except Exception as e:
@@ -244,7 +278,7 @@ df_settori, df_operatori, df_prodotti = carica_dati()
 # --- 5. HEADER ---
 st.markdown("""
     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
-        <div style="background-color: #0e3d2f; color: white; padding: 8px 12px; border-radius: 8px; font-weight: bold;">🛡️</div>
+        <div style="background-color: #0e3d2f; color: white; padding: 8px 12px; border-radius: 8px; font-weight: bold;">🛡️️</div>
         <div>
             <div class="brand-title">OFFICINE LUPONE - GESTIONALE ENTERPRISE</div>
             <div class="brand-sub">Sistema Integrato AI • Versione Cloud</div>
@@ -335,15 +369,28 @@ with tab_prodotti:
         if not df_settori.empty:
             for _, s_row in df_settori.iterrows():
                 val_ore = st.number_input(f"Ore: {s_row['Nome Settore']}", min_value=0.0, step=0.5, key=f"ore_s_{s_row['ID']}")
-                ore_settori_dict[int(s_row['ID'])] = val_ore
+                if val_ore > 0:
+                    ore_settori_dict[int(s_row['ID'])] = val_ore
                 
         p_costo = st.number_input("Costo Interno (€):", min_value=0.0, step=10.0)
         p_prezzo = st.number_input("Prezzo Vendita (€):", min_value=0.0, step=10.0)
         
         if st.button("Salva Prodotto", type="primary"):
-            if p_particolare:
-                st.toast(salva_prodotto_esteso(p_particolare, p_mat_tratt, p_macch_grup, p_disegno, p_costo, p_prezzo, ore_settori_dict))
-                st.rerun()
+            if p_particolare and p_particolare.strip():
+                esito = salva_prodotto_esteso(
+                    particolare=p_particolare,
+                    mat_tratt=p_mat_tratt,
+                    macch_gruppo=p_macch_grup,
+                    disegno=p_disegno,
+                    costo=p_costo,
+                    prezzo=p_prezzo,
+                    ore_settori=ore_settori_dict
+                )
+                st.toast(esito)
+                if "✅" in esito:
+                    st.rerun()
+            else:
+                st.warning("⚠️ Il campo 'Particolare' è obbligatorio!")
 
     st.write("")
     st.dataframe(df_prodotti, width="stretch", hide_index=True)
