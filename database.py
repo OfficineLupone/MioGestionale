@@ -1,46 +1,54 @@
-import sqlite3
+import os
+import streamlit as st
+import psycopg2
+
+def get_connection():
+    # Recupera l'URL del database dai Secrets di Streamlit o dall'ambiente
+    db_url = st.secrets.get("DATABASE_URL", os.environ.get("DATABASE_URL"))
+    if not db_url:
+        raise ValueError("DATABASE_URL non trovato nei Secrets di Streamlit!")
+    return psycopg2.connect(db_url)
 
 def init_db():
-    conn = sqlite3.connect('gestionale.db')
+    conn = get_connection()
     c = conn.cursor()
     
-    # Tabelle del gestionale
+    # Creazione tabelle PostgreSQL per Neon
     c.execute('''CREATE TABLE IF NOT EXISTS settori (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, 
-        nome TEXT UNIQUE NOT NULL)''')
+        id SERIAL PRIMARY KEY, 
+        nome VARCHAR(255) UNIQUE NOT NULL)''')
         
     c.execute('''CREATE TABLE IF NOT EXISTS operatori (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        nome TEXT NOT NULL,
-        settore_id INTEGER NOT NULL,
-        FOREIGN KEY (settore_id) REFERENCES settori(id) ON DELETE CASCADE)''')
+        id SERIAL PRIMARY KEY,
+        nome VARCHAR(255) NOT NULL,
+        settore_id INTEGER NOT NULL REFERENCES settori(id) ON DELETE CASCADE)''')
 
     c.execute('''CREATE TABLE IF NOT EXISTS prodotti (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, 
-        nome TEXT UNIQUE NOT NULL, 
+        id SERIAL PRIMARY KEY, 
+        nome VARCHAR(255) UNIQUE NOT NULL, 
         ore_lavorazione REAL NOT NULL, 
         costo_interno REAL NOT NULL, 
         prezzo_vendita REAL NOT NULL)''')
         
     c.execute('''CREATE TABLE IF NOT EXISTS aziende (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, 
-        ragione_sociale TEXT UNIQUE NOT NULL, 
-        piva TEXT, 
-        email TEXT)''')
+        id SERIAL PRIMARY KEY, 
+        ragione_sociale VARCHAR(255) UNIQUE NOT NULL, 
+        piva VARCHAR(50), 
+        email VARCHAR(255))''')
         
     c.execute('''CREATE TABLE IF NOT EXISTS preventivi (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        id SERIAL PRIMARY KEY, 
         azienda_id INTEGER, 
         prodotto_id INTEGER, 
         quantita INTEGER, 
         prezzo_totale REAL, 
         ore_totali_stimate REAL, 
-        stato TEXT DEFAULT 'In attesa')''')
+        stato VARCHAR(50) DEFAULT 'In attesa')''')
         
     c.execute('''CREATE TABLE IF NOT EXISTS lavori (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, 
+        id SERIAL PRIMARY KEY, 
         preventivo_id INTEGER, 
-        settore_nome TEXT, 
+        settore_nome VARCHAR(255), 
         ore_effettive REAL, 
         note TEXT)''')
     
