@@ -341,13 +341,67 @@ def salva_prodotto_esteso(
     try:
         with database.get_connection() as conn:
             with conn.cursor() as c:
-                c.execute("""
+
+                sql_prodotto = """
                     INSERT INTO prodotti (
-                        nome, materiale_trattamento, macchina_gruppo_formato,
-                        disegno, costo_interno, prezzo_vendita
+                        nome,
+                        materiale_trattamento,
+                        macchina_gruppo_formato,
+                        disegno,
+                        costo_interno,
+                        prezzo_vendita
                     )
                     VALUES (%s, %s, %s, %s, %s, %s)
                     ON CONFLICT (nome) DO UPDATE SET
                         materiale_trattamento = EXCLUDED.materiale_trattamento,
                         macchina_gruppo_formato = EXCLUDED.macchina_gruppo_formato,
                         disegno = EXCLUDED.disegno,
+                        costo_interno = EXCLUDED.costo_interno,
+                        prezzo_vendita = EXCLUDED.prezzo_vendita
+                    RETURNING id;
+                """
+
+                c.execute(
+                    sql_prodotto,
+                    (
+                        particolare.strip(),
+                        mat_tratt.strip(),
+                        macch_gruppo.strip(),
+                        disegno.strip(),
+                        costo,
+                        prezzo
+                    )
+                )
+
+                prodotto_id = c.fetchone()[0]
+
+                for settore_id, ore in ore_settori.items():
+
+                    if ore > 0:
+
+                        sql_ore = """
+                            INSERT INTO prodotto_ore_settori
+                                (prodotto_id, settore_id, ore)
+                            VALUES (%s, %s, %s)
+                            ON CONFLICT (prodotto_id, settore_id)
+                            DO UPDATE SET ore = EXCLUDED.ore;
+                        """
+
+                        c.execute(sql_ore, (prodotto_id, settore_id, ore))
+
+                    else:
+
+                        sql_delete = """
+                            DELETE FROM prodotto_ore_settori
+                            WHERE prodotto_id = %s
+                            AND settore_id = %s;
+                        """
+
+                        c.execute(sql_delete, (prodotto_id, settore_id))
+
+            conn.commit()
+
+        return f"✅ Prodotto “{particolare.strip()}” salvato."
+
+    except Exception as e:
+        return f"❌ Errore: {e}"
