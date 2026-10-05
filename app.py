@@ -58,6 +58,16 @@ st.markdown("""
         border-radius: 6px !important;
         font-weight: 600 !important;
     }
+
+    .sector-badge {
+        background-color: #e2e8f0;
+        color: #1e293b;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 0.85rem;
+        font-weight: 500;
+        margin-right: 5px;
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -105,7 +115,7 @@ def elimina_settore_db(nome_settore: str) -> str:
         return f"❌ Errore: {e}"
 
 def aggiungi_operatore_db(nome_operatore: str, settore_id: int) -> str:
-    """Aggiunge un nuovo operatore assegnandolo a un settore specificato tramite settore_id."""
+    """Aggiunge un nuovo operatore assegnandolo a un settore."""
     if not nome_operatore or not nome_operatore.strip():
         return "❌ Il nome dell'operatore non può essere vuoto!"
     try:
@@ -119,7 +129,7 @@ def aggiungi_operatore_db(nome_operatore: str, settore_id: int) -> str:
         return f"❌ Errore: {e}"
 
 def elimina_operatore_db(operatore_id: int) -> str:
-    """Elimina un operatore tramite il suo ID numerico."""
+    """Elimina un operatore tramite ID."""
     try:
         with database.get_connection() as conn:
             with conn.cursor() as c:
@@ -131,7 +141,7 @@ def elimina_operatore_db(operatore_id: int) -> str:
         return f"❌ Errore: {e}"
 
 def reset_settori_ai(nuovi_settori: list[str]) -> str:
-    """Cancella tutti i settori esistenti e li sostituisce con una nuova lista."""
+    """Resetta tutti i settori con una nuova lista."""
     try:
         with database.get_connection() as conn:
             with conn.cursor() as c:
@@ -154,9 +164,7 @@ def salva_prodotto_esteso(
     prezzo: float = 0.0,
     ore_settori: dict = None
 ) -> str:
-    """
-    Crea o aggiorna un prodotto con tutti i suoi dettagli e le ore assegnate per settore.
-    """
+    """Crea o aggiorna un prodotto con dettaglio ore per settore."""
     if not particolare or not str(particolare).strip():
         return "❌ Il campo 'Particolare' è obbligatorio!"
 
@@ -171,7 +179,6 @@ def salva_prodotto_esteso(
     except (ValueError, TypeError):
         return "❌ I campi 'Costo' e 'Prezzo' devono essere numeri validi!"
 
-    # Calcola il totale delle ore assegnate ai vari settori (default a 0.0 se vuoto)
     ore_totali = 0.0
     if isinstance(ore_settori, dict):
         for val in ore_settori.values():
@@ -229,8 +236,9 @@ def salva_prodotto_esteso(
         return f"✅ Prodotto '{particolare}' salvato con successo!"
     except Exception as e:
         return f"❌ Errore durante il salvataggio: {e}"
+
 def elimina_prodotto_db(nome_prodotto: str) -> str:
-    """Elimina un prodotto dal catalogo in base al suo nome (particolare)."""
+    """Elimina un prodotto dal catalogo."""
     try:
         with database.get_connection() as conn:
             with conn.cursor() as c:
@@ -241,7 +249,7 @@ def elimina_prodotto_db(nome_prodotto: str) -> str:
     except Exception as e:
         return f"❌ Errore: {e}"
 
-# Mappatura e lista completa dei tool per l'IA
+# Mappatura tool IA
 tools_map = {
     "aggiungi_settore_db": aggiungi_settore_db,
     "rinomina_settore_db": rinomina_settore_db,
@@ -252,10 +260,9 @@ tools_map = {
     "salva_prodotto_esteso": salva_prodotto_esteso,
     "elimina_prodotto_db": elimina_prodotto_db
 }
-
 tools_list = list(tools_map.values())
 
-# --- 4. CARICAMENTO DATI OPTIMIZZATO E CACHED ---
+# --- 4. CARICAMENTO DATI OPTIMIZZATO ---
 @st.cache_data(ttl=5)
 def carica_dati():
     try:
@@ -285,12 +292,12 @@ def carica_dati():
                         p.materiale_trattamento AS "Materiale / Trattamento",
                         p.macchina_gruppo_formato AS "Macchina / Gruppo / Formato",
                         p.disegno AS "Disegno",
-                        COALESCE(SUM(pos.ore), 0) AS "Ore Totali",
+                        COALESCE(SUM(pos.ore), p.ore_lavorazione, 0) AS "Ore Totali",
                         p.costo_interno AS "Costo (€)",
                         p.prezzo_vendita AS "Prezzo (€)"
                     FROM prodotti p
                     LEFT JOIN prodotto_ore_settori pos ON p.id = pos.prodotto_id
-                    GROUP BY p.id, p.nome, p.materiale_trattamento, p.macchina_gruppo_formato, p.disegno, p.costo_interno, p.prezzo_vendita
+                    GROUP BY p.id, p.nome, p.materiale_trattamento, p.macchina_gruppo_formato, p.disegno, p.costo_interno, p.prezzo_vendita, p.ore_lavorazione
                     ORDER BY p.id;
                 '''
                 c.execute(query_prodotti)
@@ -298,16 +305,28 @@ def carica_dati():
                 cols_prod = [desc[0] for desc in c.description] if c.description else ["ID", "Particolare", "Materiale / Trattamento", "Macchina / Gruppo / Formato", "Disegno", "Ore Totali", "Costo (€)", "Prezzo (€)"]
                 df_prodotti = pd.DataFrame(rows_prod, columns=cols_prod)
 
-        return df_settori, df_operatori, df_prodotti
+                # Dettaglio ore prodotti per settore
+                query_dettaglio_ore = '''
+                    SELECT pos.prodotto_id, s.id AS settore_id, s.nome AS nome_settore, pos.ore
+                    FROM prodotto_ore_settori pos
+                    JOIN settori s ON pos.settore_id = s.id
+                '''
+                c.execute(query_dettaglio_ore)
+                rows_dettaglio = c.fetchall()
+                cols_dettaglio = ["prodotto_id", "settore_id", "nome_settore", "ore"]
+                df_dettaglio_ore = pd.DataFrame(rows_dettaglio, columns=cols_dettaglio)
+
+        return df_settori, df_operatori, df_prodotti, df_dettaglio_ore
     except Exception as e:
         st.error(f"Errore lettura DB: {e}")
         return (
             pd.DataFrame(columns=['ID', 'Nome Settore']),
             pd.DataFrame(columns=['ID', 'Nome Operatore', 'Settore', 'settore_id']),
-            pd.DataFrame(columns=['ID', 'Particolare', 'Materiale / Trattamento', 'Macchina / Gruppo / Formato', 'Disegno', 'Ore Totali', 'Costo (€)', 'Prezzo (€)'])
+            pd.DataFrame(columns=['ID', 'Particolare', 'Materiale / Trattamento', 'Macchina / Gruppo / Formato', 'Disegno', 'Ore Totali', 'Costo (€)', 'Prezzo (€)']),
+            pd.DataFrame(columns=['prodotto_id', 'settore_id', 'nome_settore', 'ore'])
         )
 
-df_settori, df_operatori, df_prodotti = carica_dati()
+df_settori, df_operatori, df_prodotti, df_dettaglio_ore = carica_dati()
 
 # --- 5. HEADER ---
 st.markdown("""
@@ -324,7 +343,7 @@ st.markdown("""
 tab_panoramica, tab_settori, tab_prodotti, tab_assistente = st.tabs([
     "Panoramica", 
     "Settori Produttivi", 
-    "Catalogo Prodotti", 
+    "Catalogo Prodotti & Dettagli", 
     "💬 Assistente IA"
 ])
 
@@ -389,45 +408,158 @@ with tab_settori:
     st.write("")
     st.dataframe(df_settori, use_container_width=True, hide_index=True)
 
-# --- TAB CATALOGO ---
+# --- TAB CATALOGO CON DETTAGLIO ORE ---
 with tab_prodotti:
-    st.markdown("## 📋 Catalogo Prodotti")
+    st.markdown("## 📋 Catalogo Prodotti e Dettagli")
     
-    with st.popover("➕ Aggiungi Prodotto Completo"):
-        p_particolare = st.text_input("Particolare:")
-        p_mat_tratt = st.text_input("Materiale / Trattamento:")
-        p_macch_grup = st.text_input("Macchina / Gruppo:")
-        p_disegno = st.text_input("Disegno:")
-        
-        ore_settori_dict = {}
-        if not df_settori.empty:
-            for _, s_row in df_settori.iterrows():
-                val_ore = st.number_input(f"Ore: {s_row['Nome Settore']}", min_value=0.0, step=0.5, key=f"ore_s_{s_row['ID']}")
-                if val_ore > 0:
-                    ore_settori_dict[int(s_row['ID'])] = val_ore
-                
-        p_costo = st.number_input("Costo Interno (€):", min_value=0.0, step=10.0)
-        p_prezzo = st.number_input("Prezzo Vendita (€):", min_value=0.0, step=10.0)
-        
-        if st.button("Salva Prodotto", type="primary"):
-            if p_particolare and p_particolare.strip():
-                esito = salva_prodotto_esteso(
-                    particolare=p_particolare,
-                    mat_tratt=p_mat_tratt,
-                    macch_gruppo=p_macch_grup,
-                    disegno=p_disegno,
-                    costo=p_costo,
-                    prezzo=p_prezzo,
-                    ore_settori=ore_settori_dict
-                )
-                st.toast(esito)
-                if "✅" in esito:
-                    st.rerun()
-            else:
-                st.warning("⚠️ Il campo 'Particolare' è obbligatorio!")
+    col_top1, col_top2 = st.columns([3, 1])
+    with col_top1:
+        ricerca = st.text_input("🔍 Cerca prodotto per nome o disegno...", placeholder="Es. Flangia, Albero...")
+    with col_top2:
+        st.write("")
+        st.write("")
+        popover_nuovo = st.popover("➕ Nuovo Prodotto", use_container_width=True)
+        with popover_nuovo:
+            p_particolare = st.text_input("Particolare (Obbligatorio):")
+            p_mat_tratt = st.text_input("Materiale / Trattamento:")
+            p_macch_grup = st.text_input("Macchina / Gruppo / Formato:")
+            p_disegno = st.text_input("Numero Disegno:")
+            
+            st.markdown("---")
+            st.markdown("##### ⏱ Ore per Settore")
+            ore_settori_dict = {}
+            if not df_settori.empty:
+                for _, s_row in df_settori.iterrows():
+                    val_ore = st.number_input(f"{s_row['Nome Settore']} (ore):", min_value=0.0, step=0.5, key=f"ore_new_s_{s_row['ID']}")
+                    if val_ore > 0:
+                        ore_settori_dict[int(s_row['ID'])] = val_ore
+            
+            st.markdown("---")
+            p_costo = st.number_input("Costo Interno (€):", min_value=0.0, step=10.0)
+            p_prezzo = st.number_input("Prezzo Vendita (€):", min_value=0.0, step=10.0)
+            
+            if st.button("Salva Prodotto", type="primary", use_container_width=True):
+                if p_particolare and p_particolare.strip():
+                    esito = salva_prodotto_esteso(
+                        particolare=p_particolare,
+                        mat_tratt=p_mat_tratt,
+                        macch_gruppo=p_macch_grup,
+                        disegno=p_disegno,
+                        costo=p_costo,
+                        prezzo=p_prezzo,
+                        ore_settori=ore_settori_dict
+                    )
+                    st.toast(esito)
+                    if "✅" in esito:
+                        st.rerun()
+                else:
+                    st.warning("⚠️ Il campo 'Particolare' è obbligatorio!")
 
     st.write("")
-    st.dataframe(df_prodotti, use_container_width=True, hide_index=True)
+
+    # Filtraggio prodotti
+    df_prod_show = df_prodotti.copy()
+    if ricerca:
+        df_prod_show = df_prod_show[
+            df_prod_show['Particolare'].str.contains(ricerca, case=False, na=False) |
+            df_prod_show['Disegno'].str.contains(ricerca, case=False, na=False)
+        ]
+
+    if df_prod_show.empty:
+        st.info("Nessun prodotto trovato.")
+    else:
+        st.markdown("### Lista Prodotti (Espandi per vedere le ore dei settori)")
+        
+        # Rendering schede per ogni prodotto
+        for idx, row in df_prod_show.iterrows():
+            prod_id = row['ID']
+            nome_prod = row['Particolare']
+            ore_tot = row['Ore Totali']
+            costo = row['Costo (€)']
+            prezzo = row['Prezzo (€)']
+            
+            # Filtro ore per questo specifico prodotto
+            df_ore_p = df_dettaglio_ore[df_dettaglio_ore['prodotto_id'] == prod_id] if not df_dettaglio_ore.empty else pd.DataFrame()
+
+            # Titolo scheda
+            expander_title = f"📦 {nome_prod} | Ore Totali: {ore_tot:.1f}h | Costo: €{costo:.2f} | Prezzo: €{prezzo:.2f}"
+            
+            with st.expander(expander_title):
+                col_d1, col_d2 = st.columns([2, 1])
+                
+                with col_d1:
+                    st.markdown("##### ⚙️ Dettagli Tecnici")
+                    st.write(f"**Materiale / Trattamento:** {row['Materiale / Trattamento'] or 'N/D'}")
+                    st.write(f"**Macchina / Gruppo / Formato:** {row['Macchina / Gruppo / Formato'] or 'N/D'}")
+                    st.write(f"**Disegno:** {row['Disegno'] or 'N/D'}")
+                    
+                    st.markdown("##### ⏱ Dettaglio Ore per Settore")
+                    if not df_ore_p.empty and len(df_ore_p) > 0:
+                        grid_cols = st.columns(3)
+                        for i, (_, r_ore) in enumerate(df_ore_p.iterrows()):
+                            col_target = grid_cols[i % 3]
+                            col_target.metric(label=f"🏭 {r_ore['nome_settore']}", value=f"{r_ore['ore']:.1f} h")
+                    else:
+                        st.caption("Nessuna ora assegnata ai singoli settori.")
+
+                with col_d2:
+                    st.markdown("##### 📊 Economia & Margine")
+                    margine = prezzo - costo
+                    percentuale = (margine / costo * 100) if costo > 0 else 0.0
+                    
+                    st.metric("Margine Nominale", f"€{margine:.2f}", delta=f"{percentuale:.1f}%")
+                    
+                    st.markdown("---")
+                    st.markdown("##### ⚙️ Azioni Rapide")
+                    
+                    # Form Modifica
+                    with st.popover("✏️ Modifica Prodotto / Ore", use_container_width=True):
+                        e_part = st.text_input("Particolare:", value=nome_prod, key=f"edit_p_{prod_id}")
+                        e_mat = st.text_input("Materiale / Trattamento:", value=row['Materiale / Trattamento'], key=f"edit_m_{prod_id}")
+                        e_mac = st.text_input("Macchina / Gruppo:", value=row['Macchina / Gruppo / Formato'], key=f"edit_mc_{prod_id}")
+                        e_dis = st.text_input("Disegno:", value=row['Disegno'], key=f"edit_d_{prod_id}")
+                        
+                        st.markdown("**Ore Settori:**")
+                        dict_edit_ore = {}
+                        for _, s_row in df_settori.iterrows():
+                            s_id = s_row['ID']
+                            val_attuale = 0.0
+                            if not df_ore_p.empty:
+                                val_match = df_ore_p[df_ore_p['settore_id'] == s_id]['ore'].values
+                                if len(val_match) > 0:
+                                    val_attuale = float(val_match[0])
+                            
+                            v_ore = st.number_input(
+                                f"{s_row['Nome Settore']} (h):", 
+                                min_value=0.0, 
+                                value=val_attuale, 
+                                step=0.5, 
+                                key=f"edit_ore_s_{prod_id}_{s_id}"
+                            )
+                            if v_ore > 0:
+                                dict_edit_ore[int(s_id)] = v_ore
+                        
+                        e_costo = st.number_input("Costo (€):", value=float(costo), min_value=0.0, step=10.0, key=f"edit_c_{prod_id}")
+                        e_prezzo = st.number_input("Prezzo (€):", value=float(prezzo), min_value=0.0, step=10.0, key=f"edit_pr_{prod_id}")
+                        
+                        if st.button("Salva Modifiche", type="primary", key=f"btn_salva_{prod_id}"):
+                            res = salva_prodotto_esteso(
+                                particolare=e_part,
+                                mat_tratt=e_mat,
+                                macch_gruppo=e_mac,
+                                disegno=e_dis,
+                                costo=e_costo,
+                                prezzo=e_prezzo,
+                                ore_settori=dict_edit_ore
+                            )
+                            st.toast(res)
+                            st.rerun()
+                            
+                    # Pulsante Eliminazione
+                    if st.button("🗑 Elimina Prodotto", key=f"del_p_{prod_id}", use_container_width=True):
+                        res = elimina_prodotto_db(nome_prod)
+                        st.toast(res)
+                        st.rerun()
 
 # --- TAB ASSISTENTE IA ---
 with tab_assistente:
