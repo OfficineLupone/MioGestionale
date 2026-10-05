@@ -3,7 +3,6 @@ import streamlit as st
 import psycopg2
 
 def get_connection():
-    # Recupera l'URL del database dai Secrets di Streamlit o dall'ambiente
     db_url = st.secrets.get("DATABASE_URL", os.environ.get("DATABASE_URL"))
     if not db_url:
         raise ValueError("DATABASE_URL non trovato nei Secrets di Streamlit!")
@@ -13,7 +12,7 @@ def init_db():
     conn = get_connection()
     c = conn.cursor()
     
-    # Creazione tabelle PostgreSQL per Neon
+    # Tabelle base
     c.execute('''CREATE TABLE IF NOT EXISTS settori (
         id SERIAL PRIMARY KEY, 
         nome VARCHAR(255) UNIQUE NOT NULL)''')
@@ -23,13 +22,23 @@ def init_db():
         nome VARCHAR(255) NOT NULL,
         settore_id INTEGER NOT NULL REFERENCES settori(id) ON DELETE CASCADE)''')
 
+    # Nuova struttura per prodotti con i campi estesi
     c.execute('''CREATE TABLE IF NOT EXISTS prodotti (
         id SERIAL PRIMARY KEY, 
         nome VARCHAR(255) UNIQUE NOT NULL, 
-        ore_lavorazione REAL NOT NULL, 
-        costo_interno REAL NOT NULL, 
-        prezzo_vendita REAL NOT NULL)''')
+        materiale_trattamento TEXT,
+        macchina_gruppo_formato TEXT,
+        disegno TEXT,
+        costo_interno REAL NOT NULL DEFAULT 0.0, 
+        prezzo_vendita REAL NOT NULL DEFAULT 0.0)''')
         
+    # Tabella per salvare le ore di lavoro per specifico settore
+    c.execute('''CREATE TABLE IF NOT EXISTS prodotto_ore_settori (
+        prodotto_id INTEGER REFERENCES prodotti(id) ON DELETE CASCADE,
+        settore_id INTEGER REFERENCES settori(id) ON DELETE CASCADE,
+        ore REAL NOT NULL DEFAULT 0.0,
+        PRIMARY KEY (prodotto_id, settore_id))''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS aziende (
         id SERIAL PRIMARY KEY, 
         ragione_sociale VARCHAR(255) UNIQUE NOT NULL, 
