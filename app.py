@@ -356,8 +356,10 @@ tools_list = [
 @st.cache_data(ttl=30)
 def carica_dati():
     try:
-        engine = create_engine(database.get_db_uri(), pool_pre_ping=True)
-
+        engine = create_engine(
+    database.get_db_uri().replace("postgresql://", "postgresql+psycopg2://", 1),
+    pool_pre_ping=True
+)
         with engine.connect() as conn:
             df_settori = pd.read_sql_query(
                 text('SELECT id AS "ID", nome AS "Nome Settore" FROM settori ORDER BY id'),
