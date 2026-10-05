@@ -12,11 +12,17 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-try:
+# Usa st.cache_resource per eseguire init_db UNA SOLA VOLTA all'avvio del server
+@st.cache_resource
+def inizializza_database_una_volta():
     database.init_db()
+    return True
+
+try:
+    inizializza_database_una_volta()
 except Exception as e:
     st.error(f"Errore di connessione al database Neon: {e}")
-
+    
 # --- 2. CSS PERSONALIZZATO ---
 st.markdown("""
     <style>
