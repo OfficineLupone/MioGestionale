@@ -6,14 +6,23 @@ def _get_clean_db_url() -> str:
     db_url = st.secrets.get("DATABASE_URL", os.environ.get("DATABASE_URL"))
     if not db_url:
         raise ValueError("DATABASE_URL non trovato nei Secrets di Streamlit!")
-    # SQLAlchemy / Pandas richiedono 'postgresql://' invece di 'postgres://'
+    
+    # 1. Corregge 'postgres://' in 'postgresql://' per Pandas/SQLAlchemy
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
+        
+    # 2. Assicura che ci sia sslmode=require per Neon
+    if "sslmode=" not in db_url:
+        separator = "&" if "?" in db_url else "?"
+        db_url = f"{db_url}{separator}sslmode=require"
+        
     return db_url
 
 def get_connection():
     db_url = _get_clean_db_url()
-    return psycopg2.connect(db_url)
+    conn = psycopg2.connect(db_url)
+    conn.autocommit = False  # Per garantire la gestione esplicita delle transazioni
+    return conn
 
 def get_db_uri() -> str:
     return _get_clean_db_url()
