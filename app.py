@@ -7,7 +7,7 @@ import database
 # --- 1. CONFIGURAZIONE PAGINA ---
 st.set_page_config(
     page_title="OFFICINE LUPONE - Dashboard",
-    page_icon="⚙️️",
+    page_icon="⚙",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
@@ -73,6 +73,7 @@ def aggiungi_settore_db(nome_settore: str) -> str:
             with conn.cursor() as c:
                 c.execute("INSERT INTO settori (nome) VALUES (%s) ON CONFLICT (nome) DO NOTHING;", (nome_settore.strip(),))
             conn.commit()
+        st.cache_data.clear()
         return f"✅ Settore '{nome_settore}' aggiunto!"
     except Exception as e:
         return f"❌ Errore durante l'inserimento: {e}"
@@ -86,6 +87,7 @@ def rinomina_settore_db(vecchio_nome: str, nuovo_nome: str) -> str:
             with conn.cursor() as c:
                 c.execute("UPDATE settori SET nome = %s WHERE nome = %s", (nuovo_nome.strip(), vecchio_nome))
             conn.commit()
+        st.cache_data.clear()
         return f"✅ Settore '{vecchio_nome}' rinominato in '{nuovo_nome}'!"
     except Exception as e:
         return f"❌ Errore: {e}"
@@ -97,6 +99,7 @@ def elimina_settore_db(nome_settore: str) -> str:
             with conn.cursor() as c:
                 c.execute("DELETE FROM settori WHERE nome = %s", (nome_settore,))
             conn.commit()
+        st.cache_data.clear()
         return f"🗑️ Settore '{nome_settore}' eliminato!"
     except Exception as e:
         return f"❌ Errore: {e}"
@@ -110,6 +113,7 @@ def aggiungi_operatore_db(nome_operatore: str, settore_id: int) -> str:
             with conn.cursor() as c:
                 c.execute("INSERT INTO operatori (nome, settore_id) VALUES (%s, %s)", (nome_operatore.strip(), int(settore_id)))
             conn.commit()
+        st.cache_data.clear()
         return f"✅ Operatore '{nome_operatore}' aggiunto!"
     except Exception as e:
         return f"❌ Errore: {e}"
@@ -121,6 +125,7 @@ def elimina_operatore_db(operatore_id: int) -> str:
             with conn.cursor() as c:
                 c.execute("DELETE FROM operatori WHERE id = %s", (int(operatore_id),))
             conn.commit()
+        st.cache_data.clear()
         return f"🗑️ Operatore rimosso!"
     except Exception as e:
         return f"❌ Errore: {e}"
@@ -135,6 +140,7 @@ def reset_settori_ai(nuovi_settori: list[str]) -> str:
                     if settore and settore.strip():
                         c.execute("INSERT INTO settori (nome) VALUES (%s)", (settore.strip(),))
             conn.commit()
+        st.cache_data.clear()
         return f"✅ Settori resettati: {', '.join(nuovi_settori)}"
     except Exception as e:
         return f"❌ Errore: {e}"
@@ -150,18 +156,15 @@ def salva_prodotto_esteso(
 ) -> str:
     """
     Crea o aggiorna un prodotto con tutti i suoi dettagli e le ore assegnate per settore.
-    `ore_settori` è un dizionario con chiavi ID settore (int o str) e valori ore (float). Es: {1: 2.5, 2: 4.0}
     """
     if not particolare or not str(particolare).strip():
         return "❌ Il campo 'Particolare' è obbligatorio!"
 
-    # Normalizzazione e pulizia dei valori per evitare AttributeError su NoneType
     particolare = str(particolare).strip()
     mat_tratt = str(mat_tratt or "").strip()
     macch_gruppo = str(macch_gruppo or "").strip()
     disegno = str(disegno or "").strip()
     
-    # Conversione sicura dei valori numerici
     try:
         costo_val = float(costo or 0.0)
         prezzo_val = float(prezzo or 0.0)
@@ -188,7 +191,6 @@ def salva_prodotto_esteso(
                     return "❌ Errore durante il recupero dell'ID del prodotto."
                 prodotto_id = res[0]
                 
-                # Gestione sicura delle ore per settore
                 if isinstance(ore_settori, dict):
                     for settore_id, ore in ore_settori.items():
                         try:
@@ -210,6 +212,7 @@ def salva_prodotto_esteso(
                             """, (prodotto_id, s_id))
 
             conn.commit()
+        st.cache_data.clear()
         return f"✅ Prodotto '{particolare}' salvato con successo!"
     except Exception as e:
         return f"❌ Errore durante il salvataggio: {e}"
@@ -221,6 +224,7 @@ def elimina_prodotto_db(nome_prodotto: str) -> str:
             with conn.cursor() as c:
                 c.execute("DELETE FROM prodotti WHERE nome = %s", (nome_prodotto,))
             conn.commit()
+        st.cache_data.clear()
         return f"🗑️ Prodotto '{nome_prodotto}' eliminato!"
     except Exception as e:
         return f"❌ Errore: {e}"
@@ -239,34 +243,52 @@ tools_map = {
 
 tools_list = list(tools_map.values())
 
-# --- 4. CARICAMENTO DATI ---
+# --- 4. CARICAMENTO DATI OPTIMIZZATO E CACHED ---
+@st.cache_data(ttl=5)
 def carica_dati():
     try:
         with database.get_connection() as conn:
-            df_settori = pd.read_sql_query('SELECT id AS "ID", nome AS "Nome Settore" FROM settori ORDER BY id', conn)
-            df_operatori = pd.read_sql_query('''
-                SELECT o.id AS "ID", o.nome AS "Nome Operatore", s.nome AS "Settore", o.settore_id 
-                FROM operatori o 
-                JOIN settori s ON o.settore_id = s.id ORDER BY o.id
-            ''', conn)
-            query_prodotti = '''
-                SELECT 
-                    p.id AS "ID",
-                    p.nome AS "Particolare",
-                    p.materiale_trattamento AS "Materiale / Trattamento",
-                    p.macchina_gruppo_formato AS "Macchina / Gruppo / Formato",
-                    p.disegno AS "Disegno",
-                    COALESCE(SUM(pos.ore), 0) AS "Ore Totali",
-                    p.costo_interno AS "Costo (€)",
-                    p.prezzo_vendita AS "Prezzo (€)"
-                FROM prodotti p
-                LEFT JOIN prodotto_ore_settori pos ON p.id = pos.prodotto_id
-                GROUP BY p.id, p.nome, p.materiale_trattamento, p.macchina_gruppo_formato, p.disegno, p.costo_interno, p.prezzo_vendita
-                ORDER BY p.id;
-            '''
-            df_prodotti = pd.read_sql_query(query_prodotti, conn)
+            with conn.cursor() as c:
+                # Settori
+                c.execute('SELECT id AS "ID", nome AS "Nome Settore" FROM settori ORDER BY id')
+                rows_settori = c.fetchall()
+                cols_settori = [desc[0] for desc in c.description] if c.description else ["ID", "Nome Settore"]
+                df_settori = pd.DataFrame(rows_settori, columns=cols_settori)
+
+                # Operatori
+                c.execute('''
+                    SELECT o.id AS "ID", o.nome AS "Nome Operatore", s.nome AS "Settore", o.settore_id 
+                    FROM operatori o 
+                    JOIN settori s ON o.settore_id = s.id ORDER BY o.id
+                ''')
+                rows_op = c.fetchall()
+                cols_op = [desc[0] for desc in c.description] if c.description else ["ID", "Nome Operatore", "Settore", "settore_id"]
+                df_operatori = pd.DataFrame(rows_op, columns=cols_op)
+
+                # Prodotti
+                query_prodotti = '''
+                    SELECT 
+                        p.id AS "ID",
+                        p.nome AS "Particolare",
+                        p.materiale_trattamento AS "Materiale / Trattamento",
+                        p.macchina_gruppo_formato AS "Macchina / Gruppo / Formato",
+                        p.disegno AS "Disegno",
+                        COALESCE(SUM(pos.ore), 0) AS "Ore Totali",
+                        p.costo_interno AS "Costo (€)",
+                        p.prezzo_vendita AS "Prezzo (€)"
+                    FROM prodotti p
+                    LEFT JOIN prodotto_ore_settori pos ON p.id = pos.prodotto_id
+                    GROUP BY p.id, p.nome, p.materiale_trattamento, p.macchina_gruppo_formato, p.disegno, p.costo_interno, p.prezzo_vendita
+                    ORDER BY p.id;
+                '''
+                c.execute(query_prodotti)
+                rows_prod = c.fetchall()
+                cols_prod = [desc[0] for desc in c.description] if c.description else ["ID", "Particolare", "Materiale / Trattamento", "Macchina / Gruppo / Formato", "Disegno", "Ore Totali", "Costo (€)", "Prezzo (€)"]
+                df_prodotti = pd.DataFrame(rows_prod, columns=cols_prod)
+
         return df_settori, df_operatori, df_prodotti
-    except Exception:
+    except Exception as e:
+        st.error(f"Errore lettura DB: {e}")
         return (
             pd.DataFrame(columns=['ID', 'Nome Settore']),
             pd.DataFrame(columns=['ID', 'Nome Operatore', 'Settore', 'settore_id']),
@@ -278,7 +300,7 @@ df_settori, df_operatori, df_prodotti = carica_dati()
 # --- 5. HEADER ---
 st.markdown("""
     <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 20px;">
-        <div style="background-color: #0e3d2f; color: white; padding: 8px 12px; border-radius: 8px; font-weight: bold;">🛡️️</div>
+        <div style="background-color: #0e3d2f; color: white; padding: 8px 12px; border-radius: 8px; font-weight: bold;">🛡</div>
         <div>
             <div class="brand-title">OFFICINE LUPONE - GESTIONALE ENTERPRISE</div>
             <div class="brand-sub">Sistema Integrato AI • Versione Cloud</div>
@@ -306,10 +328,10 @@ with tab_panoramica:
     c_left, c_right = st.columns(2)
     with c_left:
         st.markdown("### 🏬 Settori")
-        st.dataframe(df_settori, width="stretch", hide_index=True)
+        st.dataframe(df_settori, use_container_width=True, hide_index=True)
     with c_right:
         st.markdown("### 👷‍♂️ Operatori")
-        st.dataframe(df_operatori[['Nome Operatore', 'Settore']] if not df_operatori.empty else df_operatori, width="stretch", hide_index=True)
+        st.dataframe(df_operatori[['Nome Operatore', 'Settore']] if not df_operatori.empty else df_operatori, use_container_width=True, hide_index=True)
 
 # --- TAB SETTORI ---
 with tab_settori:
@@ -317,7 +339,7 @@ with tab_settori:
     
     col_s1, col_s2, col_s3, col_s4 = st.columns(4)
     with col_s1:
-        with st.popover("➕ Nuovo Settore", width="stretch"):
+        with st.popover("➕ Nuovo Settore", use_container_width=True):
             nuovo_s = st.text_input("Nome Settore:")
             if st.button("Salva Settore", type="primary"):
                 if nuovo_s:
@@ -325,7 +347,7 @@ with tab_settori:
                     st.rerun()
 
     with col_s2:
-        with st.popover("✏️ Rinomina Settore", width="stretch"):
+        with st.popover("✏️ Rinomina Settore", use_container_width=True):
             if not df_settori.empty:
                 s_sel = st.selectbox("Seleziona:", df_settori['Nome Settore'].tolist())
                 s_new = st.text_input("Nuovo nome:", value=s_sel)
@@ -334,7 +356,7 @@ with tab_settori:
                     st.rerun()
 
     with col_s3:
-        with st.popover("🗑 Elimina Settore", width="stretch"):
+        with st.popover("🗑 Elimina Settore", use_container_width=True):
             if not df_settori.empty:
                 s_del = st.selectbox("Seleziona da eliminare:", df_settori['Nome Settore'].tolist())
                 if st.button("Conferma Eliminazione"):
@@ -342,7 +364,7 @@ with tab_settori:
                     st.rerun()
 
     with col_s4:
-        with st.popover("👷‍♂️ Aggiungi Operatore", width="stretch"):
+        with st.popover("👷‍♂️ Aggiungi Operatore", use_container_width=True):
             if not df_settori.empty:
                 set_target = st.selectbox("Assegna al Settore:", df_settori['Nome Settore'].tolist())
                 op_nome = st.text_input("Nome Operatore:")
@@ -353,7 +375,7 @@ with tab_settori:
                         st.rerun()
 
     st.write("")
-    st.dataframe(df_settori, width="stretch", hide_index=True)
+    st.dataframe(df_settori, use_container_width=True, hide_index=True)
 
 # --- TAB CATALOGO ---
 with tab_prodotti:
@@ -393,7 +415,7 @@ with tab_prodotti:
                 st.warning("⚠️ Il campo 'Particolare' è obbligatorio!")
 
     st.write("")
-    st.dataframe(df_prodotti, width="stretch", hide_index=True)
+    st.dataframe(df_prodotti, use_container_width=True, hide_index=True)
 
 # --- TAB ASSISTENTE IA ---
 with tab_assistente:
@@ -408,7 +430,6 @@ with tab_assistente:
             
             with st.spinner("Elaborazione del comando..."):
                 try:
-                    # Includiamo il contesto del DB attuale nel prompt di sistema
                     system_context = f"""
                     Sei l'assistente per il gestionale di Officine Lupone.
                     Contesto Attuale del Database:
