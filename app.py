@@ -1,18 +1,22 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
 from google import genai
 from google.genai import types
 import database
 
-# --- 1. CONFIGURAZIONE PAGINA ---
-database.init_db()
+# --- 1. CONFIGURAZIONE PAGINA E DB ---
 st.set_page_config(
     page_title="OFFICINE LUPONE - Dashboard",
     page_icon="⚙️",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+# Inizializza il DB PostgreSQL su Neon
+try:
+    database.init_db()
+except Exception as e:
+    st.error(f"Errore di connessione al database Neon: {e}")
 
 # --- 2. CSS PERSONALIZZATO ISO-DESIGN ---
 st.markdown("""
@@ -108,17 +112,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-def get_connection():
-    return sqlite3.connect('gestionale.db')
-
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 
 # --- FUNZIONI BACKEND SETTORI & OPERATORI ---
 def aggiungi_settore_db(nome_settore: str) -> str:
     try:
-        conn = get_connection()
+        conn = database.get_connection()
         c = conn.cursor()
-        c.execute("INSERT INTO settori (nome) VALUES (?)", (nome_settore.strip(),))
+        c.execute("INSERT INTO settori (nome) VALUES (%s)", (nome_settore.strip(),))
         conn.commit()
         conn.close()
         return f"✅ Settore '{nome_settore}' aggiunto!"
@@ -127,9 +128,9 @@ def aggiungi_settore_db(nome_settore: str) -> str:
 
 def rinomina_settore_db(vecchio_nome: str, nuovo_nome: str) -> str:
     try:
-        conn = get_connection()
+        conn = database.get_connection()
         c = conn.cursor()
-        c.execute("UPDATE settori SET nome = ? WHERE nome = ?", (nuovo_nome.strip(), vecchio_nome))
+        c.execute("UPDATE settori SET nome = %s WHERE nome = %s", (nuovo_nome.strip(), vecchio_nome))
         conn.commit()
         conn.close()
         return f"✅ Settore '{vecchio_nome}' rinominato in '{nuovo_nome}'!"
@@ -138,9 +139,9 @@ def rinomina_settore_db(vecchio_nome: str, nuovo_nome: str) -> str:
 
 def elimina_settore_db(nome_settore: str) -> str:
     try:
-        conn = get_connection()
+        conn = database.get_connection()
         c = conn.cursor()
-        c.execute("DELETE FROM settori WHERE nome = ?", (nome_settore,))
+        c.execute("DELETE FROM settori WHERE nome = %s", (nome_settore,))
         conn.commit()
         conn.close()
         return f"🗑️ Settore '{nome_settore}' eliminato!"
@@ -149,9 +150,9 @@ def elimina_settore_db(nome_settore: str) -> str:
 
 def aggiungi_operatore_db(nome_operatore: str, settore_id: int) -> str:
     try:
-        conn = get_connection()
+        conn = database.get_connection()
         c = conn.cursor()
-        c.execute("INSERT INTO operatori (nome, settore_id) VALUES (?, ?)", (nome_operatore.strip(), settore_id))
+        c.execute("INSERT INTO operatori (nome, settore_id) VALUES (%s, %s)", (nome_operatore.strip(), settore_id))
         conn.commit()
         conn.close()
         return f"✅ Operatore '{nome_operatore}' aggiunto!"
@@ -160,9 +161,9 @@ def aggiungi_operatore_db(nome_operatore: str, settore_id: int) -> str:
 
 def elimina_operatore_db(operatore_id: int) -> str:
     try:
-        conn = get_connection()
+        conn = database.get_connection()
         c = conn.cursor()
-        c.execute("DELETE FROM operatori WHERE id = ?", (operatore_id,))
+        c.execute("DELETE FROM operatori WHERE id = %s", (operatore_id,))
         conn.commit()
         conn.close()
         return f"🗑️ Operatore rimosso!"
@@ -171,13 +172,12 @@ def elimina_operatore_db(operatore_id: int) -> str:
 
 def reset_settori_ai(nuovi_settori: list[str]) -> str:
     try:
-        conn = get_connection()
+        conn = database.get_connection()
         c = conn.cursor()
-        c.execute("DELETE FROM settori")
-        c.execute("DELETE FROM sqlite_sequence WHERE name='settori'")
+        c.execute("TRUNCATE TABLE settori RESTART IDENTITY CASCADE")
         for settore in nuovi_settori:
             if settore.strip():
-                c.execute("INSERT INTO settori (nome) VALUES (?)", (settore.strip(),))
+                c.execute("INSERT INTO settori (nome) VALUES (%s)", (settore.strip(),))
         conn.commit()
         conn.close()
         return f"✅ Settori resettati: {', '.join(nuovi_settori)}"
@@ -186,15 +186,15 @@ def reset_settori_ai(nuovi_settori: list[str]) -> str:
 
 def aggiorna_prodotto_db(nome_prodotto: str, ore: float, costo: float, prezzo: float) -> str:
     try:
-        conn = get_connection()
+        conn = database.get_connection()
         c = conn.cursor()
         c.execute("""
             INSERT INTO prodotti (nome, ore_lavorazione, costo_interno, prezzo_vendita)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT(nome) DO UPDATE SET
-            ore_lavorazione=excluded.ore_lavorazione,
-            costo_interno=excluded.costo_interno,
-            prezzo_vendita=excluded.prezzo_vendita
+            ore_lavorazione=EXCLUDED.ore_lavorazione,
+            costo_interno=EXCLUDED.costo_interno,
+            prezzo_vendita=EXCLUDED.prezzo_vendita
         """, (nome_prodotto.strip(), ore, costo, prezzo))
         conn.commit()
         conn.close()
@@ -204,9 +204,9 @@ def aggiorna_prodotto_db(nome_prodotto: str, ore: float, costo: float, prezzo: f
 
 def elimina_prodotto_db(nome_prodotto: str) -> str:
     try:
-        conn = get_connection()
+        conn = database.get_connection()
         c = conn.cursor()
-        c.execute("DELETE FROM prodotti WHERE nome = ?", (nome_prodotto,))
+        c.execute("DELETE FROM prodotti WHERE nome = %s", (nome_prodotto,))
         conn.commit()
         conn.close()
         return f"🗑️ Prodotto '{nome_prodotto}' eliminato!"
@@ -229,23 +229,28 @@ with h_left:
             <div style="background-color: #0e3d2f; color: white; padding: 8px 12px; border-radius: 8px; font-weight: bold;">🛡️</div>
             <div>
                 <div class="brand-title">GESTIONALE ENTERPRISE</div>
-                <div class="brand-sub">Sistema Integrato AI • Versione 2.5</div>
+                <div class="brand-sub">Sistema Integrato AI • Versione 2.5 Cloud</div>
             </div>
         </div>
     """, unsafe_allow_html=True)
 
 st.write("")
 
-# LETTURA DATI DB
-conn = get_connection()
-df_settori = pd.read_sql_query("SELECT id AS 'ID', nome AS 'Nome Settore' FROM settori", conn)
-df_operatori = pd.read_sql_query("""
-    SELECT o.id AS 'ID', o.nome AS 'Nome Operatore', s.nome AS 'Settore', o.settore_id 
-    FROM operatori o 
-    JOIN settori s ON o.settore_id = s.id
-""", conn)
-df_prodotti = pd.read_sql_query("SELECT id AS 'ID', nome AS 'Prodotto', ore_lavorazione AS 'Ore Stimate', costo_interno AS 'Costo (€)', prezzo_vendita AS 'Prezzo (€)' FROM prodotti", conn)
-conn.close()
+# LETTURA DATI DB NEON
+try:
+    conn = database.get_connection()
+    df_settori = pd.read_sql_query('SELECT id AS "ID", nome AS "Nome Settore" FROM settori ORDER BY id', conn)
+    df_operatori = pd.read_sql_query('''
+        SELECT o.id AS "ID", o.nome AS "Nome Operatore", s.nome AS "Settore", o.settore_id 
+        FROM operatori o 
+        JOIN settori s ON o.settore_id = s.id ORDER BY o.id
+    ''', conn)
+    df_prodotti = pd.read_sql_query('SELECT id AS "ID", nome AS "Prodotto", ore_lavorazione AS "Ore Stimate", costo_interno AS "Costo (€)", prezzo_vendita AS "Prezzo (€)" FROM prodotti ORDER BY id', conn)
+    conn.close()
+except Exception:
+    df_settori = pd.DataFrame(columns=['ID', 'Nome Settore'])
+    df_operatori = pd.DataFrame(columns=['ID', 'Nome Operatore', 'Settore', 'settore_id'])
+    df_prodotti = pd.DataFrame(columns=['ID', 'Prodotto', 'Ore Stimate', 'Costo (€)', 'Prezzo (€)'])
 
 # --- 4. MENU A SCHEDE SEPARATE ---
 tab_panoramica, tab_settori, tab_prodotti, tab_preventivi, tab_report, tab_assistente = st.tabs([
@@ -298,7 +303,6 @@ with tab_settori:
     st.markdown("## 🏬 Gestione Settori & Operatori")
     st.write("Configura i settori di lavorazione e assegna gli operatori qualificati.")
     
-    # PULSANTI DI GESTIONE SETTORI
     col_s1, col_s2, col_s3, col_s4 = st.columns(4)
     
     with col_s1:
@@ -322,7 +326,7 @@ with tab_settori:
                 st.info("Nessun settore presente.")
 
     with col_s3:
-        with st.popover("🗑️️ Elimina Settore", use_container_width=True):
+        with st.popover("🗑 Elimina Settore", use_container_width=True):
             if not df_settori.empty:
                 s_del = st.selectbox("Seleziona da eliminare:", df_settori['Nome Settore'].tolist(), key="set_del_sel")
                 if st.button("Conferma Eliminazione", type="secondary", key="btn_del_s"):
@@ -347,7 +351,6 @@ with tab_settori:
 
     st.write("")
     
-    # VISUALIZZAZIONE SCHEDE SETTORI CON OPERATORI
     if not df_settori.empty:
         col_m1, col_m2 = st.columns(2)
         for i, row in df_settori.iterrows():
@@ -356,7 +359,6 @@ with tab_settori:
                 with st.container(border=True):
                     st.markdown(f"### 🏭 {row['Nome Settore']}")
                     
-                    # Filtra gli operatori di questo settore
                     ops = df_operatori[df_operatori['settore_id'] == row['ID']] if not df_operatori.empty else pd.DataFrame()
                     
                     if not ops.empty:
