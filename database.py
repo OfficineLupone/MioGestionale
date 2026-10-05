@@ -11,7 +11,7 @@ def _get_clean_db_url() -> str:
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
         
-    # 2. Rimuove channel_binding se presente (causa errori di connessione su Neon con psycopg2)
+    # 2. Rimuove channel_binding se presente
     if "channel_binding=" in db_url:
         db_url = db_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
         
@@ -24,15 +24,17 @@ def _get_clean_db_url() -> str:
 
 def get_connection():
     db_url = _get_clean_db_url()
-    conn = psycopg2.connect(db_url)
+    # Aggiunto connect_timeout=5 per evitare che lo script vada in loop/attesa infinita
+    conn = psycopg2.connect(db_url, connect_timeout=5)
     return conn
 
 def get_db_uri() -> str:
     return _get_clean_db_url()
 
 def init_db():
-    conn = get_connection()
+    conn = None
     try:
+        conn = get_connection()
         with conn.cursor() as c:
             # 1. Settori
             c.execute('''CREATE TABLE IF NOT EXISTS settori (
@@ -45,7 +47,7 @@ def init_db():
                 nome VARCHAR(255) NOT NULL,
                 settore_id INTEGER NOT NULL REFERENCES settori(id) ON DELETE CASCADE)''')
 
-            # 3. Prodotti (Crea la tabella se non esiste)
+            # 3. Prodotti
             c.execute('''CREATE TABLE IF NOT EXISTS prodotti (
                 id SERIAL PRIMARY KEY, 
                 nome VARCHAR(255) UNIQUE NOT NULL, 
@@ -55,7 +57,7 @@ def init_db():
                 costo_interno REAL NOT NULL DEFAULT 0.0, 
                 prezzo_vendita REAL NOT NULL DEFAULT 0.0)''')
             
-            # Mantenimento e Migrazione: forza l'aggiunta delle colonne se la tabella 'prodotti' esisteva già in precedenza
+            # Migrazione automatica colonne
             colonne_prodotti = [
                 ("materiale_trattamento", "TEXT"),
                 ("macchina_gruppo_formato", "TEXT"),
@@ -101,10 +103,12 @@ def init_db():
             
         conn.commit()
     except Exception as e:
-        conn.rollback()
+        if conn:
+            conn.rollback()
         raise e
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 if __name__ == "__main__":
     init_db()
