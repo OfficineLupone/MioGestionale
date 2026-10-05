@@ -3,15 +3,19 @@ import streamlit as st
 import psycopg2
 
 def _get_clean_db_url() -> str:
-    db_url = st.secrets.get("DATABASE_URL", os.environ.get("DATABASE_URL"))
+    db_url = st.secrets.get("DATABASE_URL", os.environ.get("DATABASE_URL", ""))
     if not db_url:
         raise ValueError("DATABASE_URL non trovato nei Secrets di Streamlit!")
     
-    # 1. Corregge 'postgres://' in 'postgresql://' per Pandas/SQLAlchemy
+    # 1. Corregge 'postgres://' in 'postgresql://'
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
         
-    # 2. Assicura che ci sia sslmode=require per Neon
+    # 2. Rimuove channel_binding se presente (causa errori di connessione su Neon con psycopg2)
+    if "channel_binding=" in db_url:
+        db_url = db_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
+        
+    # 3. Assicura sslmode=require
     if "sslmode=" not in db_url:
         separator = "&" if "?" in db_url else "?"
         db_url = f"{db_url}{separator}sslmode=require"
@@ -21,7 +25,6 @@ def _get_clean_db_url() -> str:
 def get_connection():
     db_url = _get_clean_db_url()
     conn = psycopg2.connect(db_url)
-    conn.autocommit = False  # Per garantire la gestione esplicita delle transazioni
     return conn
 
 def get_db_uri() -> str:
