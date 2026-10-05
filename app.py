@@ -12,13 +12,12 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Inizializza il DB PostgreSQL su Neon
 try:
     database.init_db()
 except Exception as e:
     st.error(f"Errore di connessione al database Neon: {e}")
 
-# --- 2. CSS PERSONALIZZATO ISO-DESIGN ---
+# --- 2. CSS PERSONALIZZATO ---
 st.markdown("""
     <style>
     .stApp {
@@ -114,7 +113,7 @@ st.markdown("""
 
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 
-# --- FUNZIONI BACKEND SETTORI & OPERATORI ---
+# --- FUNZIONI BACKEND DB ---
 def aggiungi_settore_db(nome_settore: str) -> str:
     try:
         conn = database.get_connection()
@@ -184,23 +183,39 @@ def reset_settori_ai(nuovi_settori: list[str]) -> str:
     except Exception as e:
         return f"Errore: {e}"
 
-def aggiorna_prodotto_db(nome_prodotto: str, ore: float, costo: float, prezzo: float) -> str:
+def salva_prodotto_esteso(particolare: str, mat_tratt: str, macch_gruppo: str, disegno: str, costo: float, prezzo: float, ore_settori: dict) -> str:
     try:
         conn = database.get_connection()
         c = conn.cursor()
+        
+        # Inserisci o aggiorna il prodotto
         c.execute("""
-            INSERT INTO prodotti (nome, ore_lavorazione, costo_interno, prezzo_vendita)
-            VALUES (%s, %s, %s, %s)
+            INSERT INTO prodotti (nome, materiale_trattamento, macchina_gruppo_formato, disegno, costo_interno, prezzo_vendita)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT(nome) DO UPDATE SET
-            ore_lavorazione=EXCLUDED.ore_lavorazione,
+            materiale_trattamento=EXCLUDED.materiale_trattamento,
+            macchina_gruppo_formato=EXCLUDED.macchina_gruppo_formato,
+            disegno=EXCLUDED.disegno,
             costo_interno=EXCLUDED.costo_interno,
             prezzo_vendita=EXCLUDED.prezzo_vendita
-        """, (nome_prodotto.strip(), ore, costo, prezzo))
+            RETURNING id;
+        """, (particolare.strip(), mat_tratt.strip(), macch_gruppo.strip(), disegno.strip(), costo, prezzo))
+        
+        prodotto_id = c.fetchone()[0]
+        
+        # Aggiorna le ore per ciascun settore
+        for settore_id, ore in ore_settori.items():
+            c.execute("""
+                INSERT INTO prodotto_ore_settori (prodotto_id, settore_id, ore)
+                VALUES (%s, %s, %s)
+                ON CONFLICT(prodotto_id, settore_id) DO UPDATE SET ore=EXCLUDED.ore;
+            """, (prodotto_id, settore_id, ore))
+            
         conn.commit()
         conn.close()
-        return f"✅ Prodotto '{nome_prodotto}' salvato!"
+        return f"✅ Prodotto '{particolare}' salvato con successo!"
     except Exception as e:
-        return f"Errore: {e}"
+        return f"Errore durante il salvataggio: {e}"
 
 def elimina_prodotto_db(nome_prodotto: str) -> str:
     try:
@@ -216,19 +231,18 @@ def elimina_prodotto_db(nome_prodotto: str) -> str:
 tools_map = {
     "aggiungi_settore_ai": aggiungi_settore_db,
     "rinomina_settore_ai": rinomina_settore_db,
-    "reset_settori_ai": reset_settori_ai,
-    "aggiorna_prodotto_ai": aggiorna_prodotto_db
+    "reset_settori_ai": reset_settori_ai
 }
-tools_list = [aggiungi_settore_db, rinomina_settore_db, reset_settori_ai, aggiorna_prodotto_db]
+tools_list = [aggiungi_settore_db, rinomina_settore_db, reset_settori_ai]
 
-# --- 3. HEADER SUPERIORE ---
+# --- 3. HEADER ---
 h_left, h_right = st.columns([3, 1])
 with h_left:
     st.markdown("""
         <div style="display: flex; align-items: center; gap: 12px;">
             <div style="background-color: #0e3d2f; color: white; padding: 8px 12px; border-radius: 8px; font-weight: bold;">🛡️</div>
             <div>
-                <div class="brand-title">GESTIONALE ENTERPRISE</div>
+                <div class="brand-title">OFFICINE LUPONE - GESTIONALE ENTERPRISE</div>
                 <div class="brand-sub">Sistema Integrato AI • Versione 2.5 Cloud</div>
             </div>
         </div>
@@ -236,7 +250,7 @@ with h_left:
 
 st.write("")
 
-# LETTURA DATI DB NEON
+# LETTURA DATI DB
 try:
     conn = database.get_connection()
     df_settori = pd.read_sql_query('SELECT id AS "ID", nome AS "Nome Settore" FROM settori ORDER BY id', conn)
@@ -245,14 +259,31 @@ try:
         FROM operatori o 
         JOIN settori s ON o.settore_id = s.id ORDER BY o.id
     ''', conn)
-    df_prodotti = pd.read_sql_query('SELECT id AS "ID", nome AS "Prodotto", ore_lavorazione AS "Ore Stimate", costo_interno AS "Costo (€)", prezzo_vendita AS "Prezzo (€)" FROM prodotti ORDER BY id', conn)
+    
+    # Query prodotti completa con totale ore stimate
+    query_prodotti = '''
+        SELECT 
+            p.id AS "ID",
+            p.nome AS "Particolare",
+            p.materiale_trattamento AS "Materiale / Trattamento",
+            p.macchina_gruppo_formato AS "Macchina / Gruppo / Formato",
+            p.disegno AS "Disegno",
+            COALESCE(SUM(pos.ore), 0) AS "Ore Totali",
+            p.costo_interno AS "Costo (€)",
+            p.prezzo_vendita AS "Prezzo (€)"
+        FROM prodotti p
+        LEFT JOIN prodotto_ore_settori pos ON p.id = pos.prodotto_id
+        GROUP BY p.id, p.nome, p.materiale_trattamento, p.macchina_gruppo_formato, p.disegno, p.costo_interno, p.prezzo_vendita
+        ORDER BY p.id;
+    '''
+    df_prodotti = pd.read_sql_query(query_prodotti, conn)
     conn.close()
 except Exception:
     df_settori = pd.DataFrame(columns=['ID', 'Nome Settore'])
     df_operatori = pd.DataFrame(columns=['ID', 'Nome Operatore', 'Settore', 'settore_id'])
-    df_prodotti = pd.DataFrame(columns=['ID', 'Prodotto', 'Ore Stimate', 'Costo (€)', 'Prezzo (€)'])
+    df_prodotti = pd.DataFrame(columns=['ID', 'Particolare', 'Materiale / Trattamento', 'Macchina / Gruppo / Formato', 'Disegno', 'Ore Totali', 'Costo (€)', 'Prezzo (€)'])
 
-# --- 4. MENU A SCHEDE SEPARATE ---
+# --- 4. TABS ---
 tab_panoramica, tab_settori, tab_prodotti, tab_preventivi, tab_report, tab_assistente = st.tabs([
     "Panoramica", 
     "Settori Produttivi", 
@@ -283,7 +314,7 @@ with tab_panoramica:
     if df_settori.empty:
         st.markdown("""
             <div class="alert-banner">
-                ⚠️ <b>Nessun settore registrato:</b> Vai nella scheda <b>Settori Produttivi</b> per aggiungerne uno o usa l'Assistente IA.
+                ⚠️ <b>Nessun settore registrato:</b> Vai nella scheda <b>Settori Produttivi</b> per aggiungerne uno prima di inserire i prodotti.
             </div>
         """, unsafe_allow_html=True)
 
@@ -379,25 +410,59 @@ with tab_settori:
 # --- 3. CATALOGO PRODOTTI ---
 with tab_prodotti:
     st.markdown("## 📋 Catalogo Prodotti e Listino")
-    st.write("Gestisci i prodotti a listino con relativi prezzi e stime orarie.")
+    st.write("Gestisci il catalogo prodotti con specifica dei campi dettagliati e delle ore per settore.")
 
     cp1, cp2 = st.columns(2)
     with cp1:
-        with st.popover("➕ Aggiungi / Modifica Prodotto", use_container_width=True):
-            st.write("**Dettagli Prodotto**")
-            p_n = st.text_input("Nome Prodotto:", key="p_name_inp")
-            p_o = st.number_input("Ore Lavorazione:", min_value=0.0, step=0.5, key="p_ore_inp")
-            p_c = st.number_input("Costo Interno (€):", min_value=0.0, step=10.0, key="p_cost_inp")
-            p_p = st.number_input("Prezzo Vendita (€):", min_value=0.0, step=10.0, key="p_price_inp")
-            if st.button("Salva Prodotto", type="primary", key="btn_save_p"):
-                if p_n:
-                    aggiorna_prodotto_db(p_n, p_o, p_c, p_p)
+        with st.popover("➕ Aggiungi Prodotto Completo", use_container_width=True):
+            st.markdown("### 📝 Dettagli Prodotto / Particolare")
+            
+            p_particolare = st.text_input("Particolare (Nome Prodotto):", key="inp_part")
+            p_mat_tratt = st.text_input("Materiale / Trattamento:", key="inp_mat")
+            p_macch_grup = st.text_input("Macchina / Gruppo / Formato:", key="inp_macch")
+            p_disegno = st.text_input("Disegno (Codice o Riferimento):", key="inp_dis")
+            
+            st.markdown("---")
+            st.markdown("⏱️ **Ore di lavoro per ogni Settore di Produzione**")
+            
+            ore_settori_dict = {}
+            if not df_settori.empty:
+                for _, s_row in df_settori.iterrows():
+                    val_ore = st.number_input(
+                        f"Ore per settore: {s_row['Nome Settore']}", 
+                        min_value=0.0, 
+                        step=0.5, 
+                        key=f"ore_set_{s_row['ID']}"
+                    )
+                    ore_settori_dict[int(s_row['ID'])] = val_ore
+            else:
+                st.warning("Nessun settore di produzione presente. Aggiungili nella scheda 'Settori Produttivi'.")
+                
+            st.markdown("---")
+            st.markdown("💰 **Costi e Prezzi**")
+            p_costo = st.number_input("Costo Interno (€):", min_value=0.0, step=10.0, key="inp_costo")
+            p_prezzo = st.number_input("Prezzo di Vendita (€):", min_value=0.0, step=10.0, key="inp_prezzo")
+            
+            if st.button("Salva Prodotto Nel Database", type="primary", key="btn_salva_prod_full"):
+                if p_particolare:
+                    esito = salva_prodotto_esteso(
+                        p_particolare, 
+                        p_mat_tratt, 
+                        p_macch_grup, 
+                        p_disegno, 
+                        p_costo, 
+                        p_prezzo, 
+                        ore_settori_dict
+                    )
+                    st.success(esito)
                     st.rerun()
+                else:
+                    st.error("Il campo 'Particolare' è obbligatorio!")
 
     with cp2:
         with st.popover("🗑️ Elimina Prodotto", use_container_width=True):
             if not df_prodotti.empty:
-                pr_del = st.selectbox("Seleziona Prodotto:", df_prodotti['Prodotto'].tolist(), key="p_del_sel")
+                pr_del = st.selectbox("Seleziona Prodotto:", df_prodotti['Particolare'].tolist(), key="p_del_sel")
                 if st.button("Conferma Eliminazione", type="secondary", key="btn_del_p"):
                     elimina_prodotto_db(pr_del)
                     st.rerun()
@@ -405,6 +470,7 @@ with tab_prodotti:
                 st.info("Nessun prodotto a catalogo.")
 
     st.write("")
+    
     st.dataframe(
         df_prodotti, 
         use_container_width=True, 
@@ -412,7 +478,7 @@ with tab_prodotti:
         column_config={
             "Costo (€)": st.column_config.NumberColumn(format="€ %.2f"),
             "Prezzo (€)": st.column_config.NumberColumn(format="€ %.2f"),
-            "Ore Stimate": st.column_config.NumberColumn(format="%.1f h")
+            "Ore Totali": st.column_config.NumberColumn(format="%.1f h")
         }
     )
 
