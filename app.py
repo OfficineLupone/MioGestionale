@@ -295,16 +295,19 @@ with h_left:
 
 st.write("")
 
-# LETTURA DATI DB (Eseguita ad ogni ricaricamento)
+# LETTURA DATI DB (Utilizza direttamente l'oggetto connessione psycopg2)
 def carica_dati():
+    conn = None
     try:
-        db_uri = database.get_db_uri()
-        df_settori = pd.read_sql_query('SELECT id AS "ID", nome AS "Nome Settore" FROM settori ORDER BY id', db_uri)
+        conn = database.get_connection()
+        
+        df_settori = pd.read_sql_query('SELECT id AS "ID", nome AS "Nome Settore" FROM settori ORDER BY id', conn)
+        
         df_operatori = pd.read_sql_query('''
             SELECT o.id AS "ID", o.nome AS "Nome Operatore", s.nome AS "Settore", o.settore_id 
             FROM operatori o 
             JOIN settori s ON o.settore_id = s.id ORDER BY o.id
-        ''', db_uri)
+        ''', conn)
         
         query_prodotti = '''
             SELECT 
@@ -321,12 +324,16 @@ def carica_dati():
             GROUP BY p.id, p.nome, p.materiale_trattamento, p.macchina_gruppo_formato, p.disegno, p.costo_interno, p.prezzo_vendita
             ORDER BY p.id;
         '''
-        df_prodotti = pd.read_sql_query(query_prodotti, db_uri)
+        df_prodotti = pd.read_sql_query(query_prodotti, conn)
     except Exception as err:
         st.error(f"Errore lettura dati: {err}")
         df_settori = pd.DataFrame(columns=['ID', 'Nome Settore'])
         df_operatori = pd.DataFrame(columns=['ID', 'Nome Operatore', 'Settore', 'settore_id'])
         df_prodotti = pd.DataFrame(columns=['ID', 'Particolare', 'Materiale / Trattamento', 'Macchina / Gruppo / Formato', 'Disegno', 'Ore Totali', 'Costo (€)', 'Prezzo (€)'])
+    finally:
+        if conn:
+            conn.close()
+
     return df_settori, df_operatori, df_prodotti
 
 df_settori, df_operatori, df_prodotti = carica_dati()
@@ -418,7 +425,7 @@ with tab_settori:
                 st.info("Nessun settore presente.")
 
     with col_s4:
-        with st.popover("👷‍♂️️ Aggiungi Operatore", width="stretch"):
+        with st.popover("👷‍♂ Aggiungi Operatore", width="stretch"):
             st.write("**Nuovo Operatore**")
             if not df_settori.empty:
                 set_target = st.selectbox("Assegna al Settore:", df_settori['Nome Settore'].tolist(), key="op_set_target")
@@ -513,7 +520,7 @@ with tab_prodotti:
                     st.error("Il campo 'Particolare' è obbligatorio!")
 
     with cp2:
-        with st.popover("🗑️️ Elimina Prodotto", width="stretch"):
+        with st.popover("🗑 Elimina Prodotto", width="stretch"):
             if not df_prodotti.empty:
                 pr_del = st.selectbox("Seleziona Prodotto:", df_prodotti['Particolare'].tolist(), key="p_del_sel")
                 if st.button("Conferma Eliminazione", type="secondary", key="btn_del_p"):
