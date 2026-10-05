@@ -171,20 +171,33 @@ def salva_prodotto_esteso(
     except (ValueError, TypeError):
         return "❌ I campi 'Costo' e 'Prezzo' devono essere numeri validi!"
 
+    # Calcola il totale delle ore assegnate ai vari settori (default a 0.0 se vuoto)
+    ore_totali = 0.0
+    if isinstance(ore_settori, dict):
+        for val in ore_settori.values():
+            try:
+                ore_totali += float(val or 0.0)
+            except (ValueError, TypeError):
+                pass
+
     try:
         with database.get_connection() as conn:
             with conn.cursor() as c:
                 c.execute("""
-                    INSERT INTO prodotti (nome, materiale_trattamento, macchina_gruppo_formato, disegno, costo_interno, prezzo_vendita)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO prodotti (
+                        nome, ore_lavorazione, costo_interno, prezzo_vendita, 
+                        materiale_trattamento, macchina_gruppo_formato, disegno
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT(nome) DO UPDATE SET
+                        ore_lavorazione = EXCLUDED.ore_lavorazione,
+                        costo_interno = EXCLUDED.costo_interno,
+                        prezzo_vendita = EXCLUDED.prezzo_vendita,
                         materiale_trattamento = EXCLUDED.materiale_trattamento,
                         macchina_gruppo_formato = EXCLUDED.macchina_gruppo_formato,
-                        disegno = EXCLUDED.disegno,
-                        costo_interno = EXCLUDED.costo_interno,
-                        prezzo_vendita = EXCLUDED.prezzo_vendita
+                        disegno = EXCLUDED.disegno
                     RETURNING id;
-                """, (particolare, mat_tratt, macch_gruppo, disegno, costo_val, prezzo_val))
+                """, (particolare, ore_totali, costo_val, prezzo_val, mat_tratt, macch_gruppo, disegno))
                 
                 res = c.fetchone()
                 if not res:
@@ -216,7 +229,6 @@ def salva_prodotto_esteso(
         return f"✅ Prodotto '{particolare}' salvato con successo!"
     except Exception as e:
         return f"❌ Errore durante il salvataggio: {e}"
-
 def elimina_prodotto_db(nome_prodotto: str) -> str:
     """Elimina un prodotto dal catalogo in base al suo nome (particolare)."""
     try:
