@@ -45,7 +45,7 @@ def init_db():
                 nome VARCHAR(255) NOT NULL,
                 settore_id INTEGER NOT NULL REFERENCES settori(id) ON DELETE CASCADE)''')
 
-            # 3. Prodotti
+            # 3. Prodotti (Crea la tabella se non esiste)
             c.execute('''CREATE TABLE IF NOT EXISTS prodotti (
                 id SERIAL PRIMARY KEY, 
                 nome VARCHAR(255) UNIQUE NOT NULL, 
@@ -54,7 +54,19 @@ def init_db():
                 disegno TEXT,
                 costo_interno REAL NOT NULL DEFAULT 0.0, 
                 prezzo_vendita REAL NOT NULL DEFAULT 0.0)''')
-                
+            
+            # Mantenimento e Migrazione: forza l'aggiunta delle colonne se la tabella 'prodotti' esisteva già in precedenza
+            colonne_prodotti = [
+                ("materiale_trattamento", "TEXT"),
+                ("macchina_gruppo_formato", "TEXT"),
+                ("disegno", "TEXT"),
+                ("costo_interno", "REAL NOT NULL DEFAULT 0.0"),
+                ("prezzo_vendita", "REAL NOT NULL DEFAULT 0.0")
+            ]
+            
+            for col_nome, col_def in colonne_prodotti:
+                c.execute(f"ALTER TABLE prodotti ADD COLUMN IF NOT EXISTS {col_nome} {col_def};")
+
             # 4. Ore per Settore
             c.execute('''CREATE TABLE IF NOT EXISTS prodotto_ore_settori (
                 prodotto_id INTEGER REFERENCES prodotti(id) ON DELETE CASCADE,
