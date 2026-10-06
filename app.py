@@ -23,7 +23,6 @@ try:
             cur.execute("ALTER TABLE public.aziende ADD COLUMN IF NOT EXISTS provincia TEXT;")
             cur.execute("ALTER TABLE public.aziende ADD COLUMN IF NOT EXISTS cap TEXT;")
             
-            # Tabella per la registrazione delle ore lavorate
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS public.ore_lavorate (
                     id SERIAL PRIMARY KEY,
@@ -37,6 +36,26 @@ try:
             conn.commit()
 except Exception as e:
     st.error(f"Errore nell'inizializzazione del database: {e}")
+
+# Funzioni con cache per velocizzare drasticamente l'app
+@st.cache_data(ttl=30)
+def load_settori():
+    with get_connection() as conn:
+        return pd.read_sql("SELECT * FROM public.settori ORDER BY nome", conn)
+
+@st.cache_data(ttl=30)
+def load_operatori():
+    with get_connection() as conn:
+        return pd.read_sql("""
+            SELECT o.id, o.nome as operatore, s.nome as settore, o.settore_id
+            FROM public.operatori o LEFT JOIN public.settori s ON o.settore_id = s.id
+            ORDER BY o.nome
+        """, conn)
+
+@st.cache_data(ttl=30)
+def load_aziende():
+    with get_connection() as conn:
+        return pd.read_sql("SELECT * FROM public.aziende ORDER BY ragione_sociale", conn)
 
 # =========================================================
 # STILE GRAFICO PERSONALIZZATO
@@ -347,6 +366,7 @@ with tab_aziende:
                                 conn.commit()
                         st.success("Azienda salvata!")
                         st.session_state["toggle_add_az"] = False
+                        st.cache_data.clear()
                         st.rerun()
 
     st.markdown("---")
@@ -361,7 +381,7 @@ with tab_aziende:
                 ORDER BY ragione_sociale
             """, conn, params=(s_term, s_term, s_term, s_term))
         else:
-            df_az = pd.read_sql("SELECT * FROM public.aziende ORDER BY ragione_sociale", conn)
+            df_az = load_aziende()
 
     if df_az.empty:
         st.info("Nessuna azienda trovata.")
@@ -407,6 +427,7 @@ with tab_aziende:
                                     """, (m_rs.strip(), m_piva.strip(), m_email.strip(), m_tel.strip(), m_sdi.strip(), m_ref.strip(), m_cit.strip(), m_pr.strip(), m_cap.strip(), int(row['id'])))
                                     conn.commit()
                             st.success("Azienda aggiornata!")
+                            st.cache_data.clear()
                             st.rerun()
 
                 if col_b3.button("🗑️", key=f"del_az_{row['id']}"):
@@ -415,6 +436,7 @@ with tab_aziende:
                             cur.execute("DELETE FROM public.aziende WHERE id=%s", (int(row['id']),))
                             conn.commit()
                     st.warning("Azienda eliminata!")
+                    st.cache_data.clear()
                     st.rerun()
 
 # ---------------------------------------------------------
@@ -434,10 +456,10 @@ with tab_settori_op:
                         cur.execute("INSERT INTO public.settori (nome) VALUES (%s)", (n_settore.strip(),))
                         conn.commit()
                 st.success("Settore creato!")
+                st.cache_data.clear()
                 st.rerun()
 
-        with get_connection() as conn:
-            df_settori = pd.read_sql("SELECT * FROM public.settori ORDER BY nome", conn)
+        df_settori = load_settori()
 
         st.markdown("##### Elenco Settori")
         for _, s_row in df_settori.iterrows():
@@ -452,6 +474,7 @@ with tab_settori_op:
                             with conn.cursor() as cur:
                                 cur.execute("UPDATE public.settori SET nome=%s WHERE id=%s", (edit_s_name.strip(), int(s_row['id'])))
                                 conn.commit()
+                        st.cache_data.clear()
                         st.rerun()
 
             if cs_btn2.button("🗑️", key=f"del_sec_{s_row['id']}"):
@@ -459,12 +482,12 @@ with tab_settori_op:
                     with conn.cursor() as cur:
                         cur.execute("DELETE FROM public.settori WHERE id=%s", (int(s_row['id']),))
                         conn.commit()
+                st.cache_data.clear()
                 st.rerun()
 
     with col_op:
         st.markdown("#### 👷 Operatori")
-        with get_connection() as conn:
-            opts_sett = pd.read_sql("SELECT id, nome FROM public.settori ORDER BY nome", conn)
+        opts_sett = load_settori()
 
         with st.form("add_operatore_form_new", clear_on_submit=True):
             n_op = st.text_input("Nome Operatore")
@@ -477,14 +500,10 @@ with tab_settori_op:
                         cur.execute("INSERT INTO public.operatori (nome, settore_id) VALUES (%s, %s)", (n_op.strip(), int(s_id_v)))
                         conn.commit()
                 st.success("Operatore aggiunto!")
+                st.cache_data.clear()
                 st.rerun()
 
-        with get_connection() as conn:
-            df_op_list = pd.read_sql("""
-                SELECT o.id, o.nome as operatore, s.nome as settore, o.settore_id
-                FROM public.operatori o LEFT JOIN public.settori s ON o.settore_id = s.id
-                ORDER BY o.nome
-            """, conn)
+        df_op_list = load_operatori()
 
         st.markdown("##### Elenco Operatori")
         for _, o_row in df_op_list.iterrows():
@@ -502,6 +521,7 @@ with tab_settori_op:
                             with conn.cursor() as cur:
                                 cur.execute("UPDATE public.operatori SET nome=%s, settore_id=%s WHERE id=%s", (edit_o_name.strip(), int(new_s_id), int(o_row['id'])))
                                 conn.commit()
+                        st.cache_data.clear()
                         st.rerun()
 
             if co_btn2.button("🗑", key=f"del_op_{o_row['id']}"):
@@ -509,6 +529,7 @@ with tab_settori_op:
                     with conn.cursor() as cur:
                         cur.execute("DELETE FROM public.operatori WHERE id=%s", (int(o_row['id']),))
                         conn.commit()
+                st.cache_data.clear()
                 st.rerun()
 
 # ---------------------------------------------------------
@@ -526,8 +547,7 @@ with tab_prodotti:
             p_mat = col_p2.text_input("Materiale / Trattamento")
 
             st.markdown("#### Ore di Lavorazione per Settore")
-            with get_connection() as conn:
-                settori_db = pd.read_sql("SELECT * FROM public.settori", conn)
+            settori_db = load_settori()
             
             ore_settori = {}
             if not settori_db.empty:
@@ -638,8 +658,8 @@ with tab_prev:
     pr_tab1, pr_tab2 = st.tabs(["Crea Preventivo", "Lista e Generazione PDF"])
 
     with pr_tab1:
+        az_opts = load_aziende()
         with get_connection() as conn:
-            az_opts = pd.read_sql("SELECT id, ragione_sociale FROM public.aziende ORDER BY ragione_sociale", conn)
             prod_opts = pd.read_sql("SELECT id, nome, prezzo_vendita FROM public.prodotti ORDER BY nome", conn)
 
         if az_opts.empty or prod_opts.empty:
@@ -789,8 +809,8 @@ with tab_lav:
             ORDER BY p.id DESC
         """, conn)
 
-        df_all_settori = pd.read_sql("SELECT * FROM public.settori ORDER BY nome", conn)
-        df_all_operatori = pd.read_sql("SELECT * FROM public.operatori ORDER BY nome", conn)
+    df_all_settori = load_settori()
+    df_all_operatori = load_operatori()
 
     if df_ord_lav.empty:
         st.info("Nessun ordine attualmente in lavorazione.")
@@ -798,7 +818,6 @@ with tab_lav:
         for _, r_lav in df_ord_lav.iterrows():
             p_id = int(r_lav['preventivo_id'])
             
-            # Calcolo ore totali registrate per l'ordine
             with get_connection() as conn:
                 tot_ore_res = pd.read_sql("SELECT COALESCE(SUM(ore), 0) FROM public.ore_lavorate WHERE preventivo_id = %s", conn, params=(p_id,)).iloc[0, 0]
 
@@ -808,7 +827,6 @@ with tab_lav:
                 st.markdown(f"### Ordine #{p_id} - {r_lav['ragione_sociale']}")
                 st.caption(f"Valore: **{r_lav['prezzo_totale']:,.2f} €** | Ore Totali: **{tot_ore_res:,.1f} h**")
 
-            # PULSANTE 1: REGISTRA ORE
             with col_btn1.popover("⏱️ Registra Ore"):
                 st.markdown(f"#### Registrazione Ore - Ordine #{p_id}")
                 with st.form(f"form_reg_ore_{p_id}"):
@@ -829,14 +847,14 @@ with tab_lav:
                             if ops_s.empty:
                                 ops_s = df_all_operatori
                             
-                            op_list = ["Nessuno"] + ops_s['nome'].tolist() if not ops_s.empty else ["Nessuno"]
+                            op_list = ["Nessuno"] + ops_s['operatore'].tolist() if not ops_s.empty else ["Nessuno"]
                             
                             c_op, c_hr = st.columns(2)
                             sel_op = c_op.selectbox("Operatore", op_list, key=f"op_s_{p_id}_{s_id}")
                             num_hr = c_hr.number_input("Ore", min_value=0.0, max_value=24.0, step=0.5, value=0.0, key=f"hr_s_{p_id}_{s_id}")
                             
                             if sel_op != "Nessuno" and num_hr > 0:
-                                op_id_val = int(df_all_operatori[df_all_operatori['nome'] == sel_op]['id'].values[0])
+                                op_id_val = int(df_all_operatori[df_all_operatori['operatore'] == sel_op]['id'].values[0])
                                 inputs_ore[s_id] = {"operatore_id": op_id_val, "ore": float(num_hr)}
 
                     if st.form_submit_button("💾 Salva Lavorazione"):
@@ -854,7 +872,6 @@ with tab_lav:
                             st.success("Ore registrate con successo!")
                             st.rerun()
 
-            # PULSANTE 2: DETTAGLIO
             with col_btn2.popover("🔍 Dettaglio"):
                 st.markdown(f"#### Dettaglio Ordine #{p_id}")
                 
@@ -884,11 +901,9 @@ with tab_lav:
                     st.info("Ancora nessuna ora registrata per questo ordine.")
                 else:
                     st.dataframe(df_det_ore, use_container_width=True)
-                    # Controllo di sicurezza sulla colonna 'Ore' per evitare KeyError
                     if 'Ore' in df_det_ore.columns:
                         st.markdown(f"**Totale Ore Effettuate:** `{df_det_ore['Ore'].sum():,.1f} h`")
 
-            # PULSANTE 3: CAMBIA STATO IN COMPLETATO
             with col_btn3:
                 if st.button("✅ Completato", key=f"btn_comp_{p_id}", use_container_width=True):
                     with get_connection() as conn:
