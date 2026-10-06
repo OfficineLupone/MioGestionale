@@ -364,7 +364,7 @@ with tab_aziende:
             df_az = pd.read_sql("SELECT * FROM public.aziende ORDER BY ragione_sociale", conn)
 
     if df_az.empty:
-        st.info("Nessunaazienda trovata.")
+        st.info("Nessuna azienda trovata.")
     else:
         for _, row in df_az.iterrows():
             c_info, c_actions = st.columns([4, 2])
@@ -385,7 +385,7 @@ with tab_aziende:
                     st.write(f"**Referente:** {row['referente'] or 'N/D'}")
                     st.write(f"**Indirizzo:** {row['citta'] or ''} ({row['provincia'] or ''}) {row['cap'] or ''}")
 
-                with col_b2.popover("✏️️"):
+                with col_b2.popover("✏"):
                     st.markdown(f"#### Modifica {row['ragione_sociale']}")
                     with st.form(f"mod_az_{row['id']}"):
                         m_rs = st.text_input("Ragione Sociale", value=row['ragione_sociale'])
@@ -825,7 +825,6 @@ with tab_lav:
                             s_id = int(s_row['id'])
                             st.markdown(f"**Settore: {s_row['nome']}**")
                             
-                            # Filtra operatori del settore o mostra tutti se non assegnati
                             ops_s = df_all_operatori[df_all_operatori['settore_id'] == s_id]
                             if ops_s.empty:
                                 ops_s = df_all_operatori
@@ -859,7 +858,6 @@ with tab_lav:
             with col_btn2.popover("🔍 Dettaglio"):
                 st.markdown(f"#### Dettaglio Ordine #{p_id}")
                 
-                # Articoli in ordine
                 with get_connection() as conn:
                     df_det_prod = pd.read_sql("""
                         SELECT pr.nome as Prodotto, pd.quantita as Quantità, pd.prezzo_totale as Totale
