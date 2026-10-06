@@ -31,8 +31,8 @@ def get_connection():
 
 def init_db():
     """
-    Crea la struttura delle tabelle se non esiste e applica le migrazioni necessarie
-    per evitare vincoli NOT NULL bloccanti su campi opzionali.
+    Crea le tabelle e rimuove automaticamente qualsiasi vincolo NOT NULL 
+    da colonne opzionali che causerebbe NotNullViolation.
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -79,11 +79,26 @@ def init_db():
                 );
             """)
 
-            # MIGRAZIONE PRODOTTI: Rimuove eventuali vincoli NOT NULL su colonne opzionali
+            # MIGRAZIONE DINAMICA AUTOMATICA: Rimuove NOT NULL da TUTTE le colonne di 'prodotti' tranne 'id' e 'nome'
             cur.execute("""
-                ALTER TABLE prodotti ALTER COLUMN macchina_gruppo_formato DROP NOT NULL;
-                ALTER TABLE prodotti ALTER COLUMN disegno DROP NOT NULL;
-                ALTER TABLE prodotti ALTER COLUMN materiale_trattamento DROP NOT NULL;
+                DO $$ 
+                DECLARE 
+                    r RECORD;
+                BEGIN 
+                    FOR r IN (
+                        SELECT column_name 
+                        FROM information_schema.columns 
+                        WHERE table_name = 'prodotti' 
+                          AND column_name NOT IN ('id', 'nome') 
+                          AND is_nullable = 'NO'
+                    ) LOOP
+                        EXECUTE 'ALTER TABLE prodotti ALTER COLUMN ' || quote_ident(r.column_name) || ' DROP NOT NULL';
+                    END LOOP;
+                END $$;
+            """)
+
+            # Imposta valori predefiniti per i campi numerici se assenti
+            cur.execute("""
                 ALTER TABLE prodotti ALTER COLUMN costo_interno SET DEFAULT 0.0;
                 ALTER TABLE prodotti ALTER COLUMN prezzo_vendita SET DEFAULT 0.0;
             """)
@@ -109,7 +124,6 @@ def init_db():
                 );
             """)
 
-            # MIGRAZIONE PREVENTIVI: Aggiunge 'data_creazione' se mancava
             cur.execute("""
                 ALTER TABLE preventivi 
                 ADD COLUMN IF NOT EXISTS data_creazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
