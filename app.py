@@ -171,7 +171,14 @@ with tab_aziende:
                             cur.execute("""
                                 INSERT INTO aziende (ragione_sociale, piva, email, telefono, codice_sdi, referente)
                                 VALUES (%s, %s, %s, %s, %s, %s)
-                            """, (rs.strip(), piva or "", email or "", tel or "", sdi or "", referente or ""))
+                            """, (
+                                rs.strip(), 
+                                (piva or "").strip(), 
+                                (email or "").strip(), 
+                                (tel or "").strip(), 
+                                (sdi or "").strip(), 
+                                (referente or "").strip()
+                            ))
                             conn.commit()
                     st.success(f"Azienda '{rs}' aggiunta!")
                     st.rerun()
@@ -216,7 +223,7 @@ with tab_aziende:
                             cur.execute("""
                                 UPDATE aziende SET ragione_sociale=%s, piva=%s, email=%s, telefono=%s, codice_sdi=%s, referente=%s
                                 WHERE id=%s
-                            """, (e_rs, e_piva, e_email, e_tel, e_sdi, e_ref, int(az_id)))
+                            """, (e_rs.strip(), e_piva.strip(), e_email.strip(), e_tel.strip(), e_sdi.strip(), e_ref.strip(), int(az_id)))
                             conn.commit()
                     st.success("Azienda aggiornata!")
                     st.rerun()
@@ -233,7 +240,7 @@ with tab_aziende:
 # 3. SETTORI E OPERATORI
 # ---------------------------------------------------------
 with tab_settori_op:
-    st.header("⚙️ Gestione Settori e Operatori")
+    st.header("⚙️️ Gestione Settori e Operatori")
     col_set, col_op = st.columns(2)
     
     with col_set:
@@ -322,6 +329,14 @@ with tab_prodotti:
                 if not p_nome or not p_nome.strip():
                     st.error("Il Nome del Prodotto è obbligatorio.")
                 else:
+                    # Sanificazione completa degli input per evitare valori NULL in DB
+                    val_nome = p_nome.strip()
+                    val_formato = p_formato.strip() if p_formato else ""
+                    val_disegno = p_disegno.strip() if p_disegno else ""
+                    val_mat = p_mat.strip() if p_mat else ""
+                    val_costo = float(costo_int) if costo_int is not None else 0.0
+                    val_prezzo = float(prezzo_ven) if prezzo_ven is not None else 0.0
+
                     with get_connection() as conn:
                         with conn.cursor() as cur:
                             cur.execute("""
@@ -335,12 +350,12 @@ with tab_prodotti:
                                 )
                                 VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
                             """, (
-                                p_nome.strip(), 
-                                p_formato.strip() if p_formato else "", 
-                                p_disegno.strip() if p_disegno else "", 
-                                p_mat.strip() if p_mat else "", 
-                                float(costo_int or 0.0), 
-                                float(prezzo_ven or 0.0)
+                                val_nome, 
+                                val_formato, 
+                                val_disegno, 
+                                val_mat, 
+                                val_costo, 
+                                val_prezzo
                             ))
                             new_prod_id = cur.fetchone()[0]
 
@@ -351,7 +366,7 @@ with tab_prodotti:
                                         VALUES (%s, %s, %s)
                                     """, (int(new_prod_id), int(s_id), float(ore_v)))
                             conn.commit()
-                    st.success(f"Prodotto '{p_nome}' salvato con successo!")
+                    st.success(f"Prodotto '{val_nome}' salvato con successo!")
                     st.rerun()
 
     with p_tab2:
@@ -531,7 +546,7 @@ with tab_lav:
                         cur.execute("""
                             INSERT INTO lavorazioni (preventivo_id, settore_id, operatore_id, ore_effettive, note)
                             VALUES (%s, %s, %s, %s, %s)
-                        """, (int(sel_lav_id), int(sec_val), int(op_val), ore_eff, note_lav or ""))
+                        """, (int(sel_lav_id), int(sec_val), int(op_val), ore_eff, (note_lav or "").strip()))
                         conn.commit()
                 st.success("Ore registrate!")
                 st.rerun()
