@@ -802,11 +802,11 @@ with tab_lav:
             with get_connection() as conn:
                 tot_ore_res = pd.read_sql("SELECT COALESCE(SUM(ore), 0) FROM public.ore_lavorate WHERE preventivo_id = %s", conn, params=(p_id,)).iloc[0, 0]
 
-            col_inf, col_btn1, col_btn2, col_btn3 = st.columns([3, 1.5, 1.2, 1.8])
+            col_inf, col_btn1, col_btn2, col_btn3 = st.columns([2.5, 1.2, 1.1, 1.2])
             
             with col_inf:
                 st.markdown(f"### Ordine #{p_id} - {r_lav['ragione_sociale']}")
-                st.caption(f"Valore: **{r_lav['prezzo_totale']:,.2f} €** | Ore Totali Registrate: **{tot_ore_res:,.1f} h**")
+                st.caption(f"Valore: **{r_lav['prezzo_totale']:,.2f} €** | Ore Totali: **{tot_ore_res:,.1f} h**")
 
             # PULSANTE 1: REGISTRA ORE
             with col_btn1.popover("⏱️ Registra Ore"):
@@ -884,7 +884,9 @@ with tab_lav:
                     st.info("Ancora nessuna ora registrata per questo ordine.")
                 else:
                     st.dataframe(df_det_ore, use_container_width=True)
-                    st.markdown(f"**Totale Ore Effettuate:** `{df_det_ore['Ore'].sum():,.1f} h`")
+                    # Controllo di sicurezza sulla colonna 'Ore' per evitare KeyError
+                    if 'Ore' in df_det_ore.columns:
+                        st.markdown(f"**Totale Ore Effettuate:** `{df_det_ore['Ore'].sum():,.1f} h`")
 
             # PULSANTE 3: CAMBIA STATO IN COMPLETATO
             with col_btn3:
@@ -893,7 +895,7 @@ with tab_lav:
                         with conn.cursor() as cur:
                             cur.execute("UPDATE public.preventivi SET stato = 'Completato' WHERE id = %s", (p_id,))
                             conn.commit()
-                    st.success(f"Ordine #{p_id} spostato in 'Completato' (Sezione Report)!")
+                    st.success(f"Ordine #{p_id} spostato in 'Completato'!")
                     st.rerun()
 
             st.markdown("---")
