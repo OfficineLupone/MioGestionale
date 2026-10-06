@@ -8,7 +8,7 @@ from database import init_db, get_connection
 
 # Configurazione Pagina
 st.set_page_config(
-    page_title="Lupone Enterprise",
+    page_title="Enterprise ERP System",
     page_icon="🏢",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -97,13 +97,13 @@ with tab_dash:
     st.header("📊 Panoramica Generale")
     
     with get_connection() as conn:
-        prodotti_count = pd.read_sql("SELECT COUNT(*) FROM prodotti", conn).iloc[0, 0]
-        prev_accettati = pd.read_sql("SELECT COUNT(*), COALESCE(SUM(prezzo_totale), 0) FROM preventivi WHERE stato = 'In lavorazione' OR stato = 'Completato'", conn)
-        prod_lavorazione = pd.read_sql("SELECT COUNT(*) FROM preventivi WHERE stato = 'In lavorazione'", conn).iloc[0, 0]
+        prodotti_count = pd.read_sql("SELECT COUNT(*) FROM public.prodotti", conn).iloc[0, 0]
+        prev_accettati = pd.read_sql("SELECT COUNT(*), COALESCE(SUM(prezzo_totale), 0) FROM public.preventivi WHERE stato = 'In lavorazione' OR stato = 'Completato'", conn)
+        prod_lavorazione = pd.read_sql("SELECT COUNT(*) FROM public.preventivi WHERE stato = 'In lavorazione'", conn).iloc[0, 0]
         
         try:
             incassi_mese = pd.read_sql("""
-                SELECT COALESCE(SUM(prezzo_totale), 0) FROM preventivi 
+                SELECT COALESCE(SUM(prezzo_totale), 0) FROM public.preventivi 
                 WHERE (stato = 'In lavorazione' OR stato = 'Completato') 
                 AND DATE_TRUNC('month', data_creazione) = DATE_TRUNC('month', CURRENT_DATE)
             """, conn).iloc[0, 0]
@@ -122,7 +122,7 @@ with tab_dash:
     with col_chart1:
         st.subheader("Stato Preventivi")
         with get_connection() as conn:
-            df_stati = pd.read_sql("SELECT stato, COUNT(*) as totale FROM preventivi GROUP BY stato", conn)
+            df_stati = pd.read_sql("SELECT stato, COUNT(*) as totale FROM public.preventivi GROUP BY stato", conn)
         if not df_stati.empty:
             st.bar_chart(df_stati.set_index("stato"))
         else:
@@ -134,7 +134,7 @@ with tab_dash:
             try:
                 df_vendite = pd.read_sql("""
                     SELECT TO_CHAR(data_creazione, 'YYYY-MM') as mese, SUM(prezzo_totale) as totale
-                    FROM preventivi WHERE stato != 'Rifiutato'
+                    FROM public.preventivi WHERE stato != 'Rifiutato'
                     GROUP BY mese ORDER BY mese DESC LIMIT 6
                 """, conn)
                 if not df_vendite.empty:
@@ -169,7 +169,7 @@ with tab_aziende:
                     with get_connection() as conn:
                         with conn.cursor() as cur:
                             cur.execute("""
-                                INSERT INTO aziende (ragione_sociale, piva, email, telefono, codice_sdi, referente)
+                                INSERT INTO public.aziende (ragione_sociale, piva, email, telefono, codice_sdi, referente)
                                 VALUES (%s, %s, %s, %s, %s, %s)
                             """, (
                                 rs.strip(), 
@@ -189,24 +189,24 @@ with tab_aziende:
             if search_az:
                 search_term = f"%{search_az}%"
                 df_az = pd.read_sql(
-                    "SELECT * FROM aziende WHERE ragione_sociale ILIKE %s OR piva ILIKE %s OR referente ILIKE %s",
+                    "SELECT * FROM public.aziende WHERE ragione_sociale ILIKE %s OR piva ILIKE %s OR referente ILIKE %s",
                     conn, params=(search_term, search_term, search_term)
                 )
             else:
-                df_az = pd.read_sql("SELECT * FROM aziende", conn)
+                df_az = pd.read_sql("SELECT * FROM public.aziende", conn)
         st.dataframe(df_az, use_container_width=True)
 
     with st_a2:
         st.subheader("Modifica o Elimina Azienda")
         with get_connection() as conn:
-            aziende_list = pd.read_sql("SELECT id, ragione_sociale FROM aziende ORDER BY ragione_sociale", conn)
+            aziende_list = pd.read_sql("SELECT id, ragione_sociale FROM public.aziende ORDER BY ragione_sociale", conn)
         
         if not aziende_list.empty:
             az_selected = st.selectbox("Seleziona Azienda", aziende_list["ragione_sociale"].tolist())
             az_id = aziende_list[aziende_list["ragione_sociale"] == az_selected]["id"].values[0]
             
             with get_connection() as conn:
-                az_curr = pd.read_sql("SELECT * FROM aziende WHERE id = %s", conn, params=(int(az_id),)).iloc[0]
+                az_curr = pd.read_sql("SELECT * FROM public.aziende WHERE id = %s", conn, params=(int(az_id),)).iloc[0]
 
             with st.form("edit_azienda_form"):
                 e_rs = st.text_input("Ragione Sociale", value=az_curr["ragione_sociale"])
@@ -221,7 +221,7 @@ with tab_aziende:
                     with get_connection() as conn:
                         with conn.cursor() as cur:
                             cur.execute("""
-                                UPDATE aziende SET ragione_sociale=%s, piva=%s, email=%s, telefono=%s, codice_sdi=%s, referente=%s
+                                UPDATE public.aziende SET ragione_sociale=%s, piva=%s, email=%s, telefono=%s, codice_sdi=%s, referente=%s
                                 WHERE id=%s
                             """, (e_rs.strip(), e_piva.strip(), e_email.strip(), e_tel.strip(), e_sdi.strip(), e_ref.strip(), int(az_id)))
                             conn.commit()
@@ -231,7 +231,7 @@ with tab_aziende:
                 if c_btn2.form_submit_button("🗑️ Elimina Azienda"):
                     with get_connection() as conn:
                         with conn.cursor() as cur:
-                            cur.execute("DELETE FROM aziende WHERE id=%s", (int(az_id),))
+                            cur.execute("DELETE FROM public.aziende WHERE id=%s", (int(az_id),))
                             conn.commit()
                     st.warning("Azienda eliminata!")
                     st.rerun()
@@ -250,13 +250,13 @@ with tab_settori_op:
             if st.form_submit_button("Aggiungi Settore") and nome_settore:
                 with get_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("INSERT INTO settori (nome) VALUES (%s)", (nome_settore.strip(),))
+                        cur.execute("INSERT INTO public.settori (nome) VALUES (%s)", (nome_settore.strip(),))
                         conn.commit()
                 st.success("Settore creato!")
                 st.rerun()
 
         with get_connection() as conn:
-            df_settori = pd.read_sql("SELECT * FROM settori ORDER BY nome", conn)
+            df_settori = pd.read_sql("SELECT * FROM public.settori ORDER BY nome", conn)
         st.dataframe(df_settori, use_container_width=True)
 
         if not df_settori.empty:
@@ -264,7 +264,7 @@ with tab_settori_op:
             if st.button("Elimina Settore Selezionato"):
                 with get_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("DELETE FROM settori WHERE nome = %s", (del_set,))
+                        cur.execute("DELETE FROM public.settori WHERE nome = %s", (del_set,))
                         conn.commit()
                 st.warning("Settore eliminato!")
                 st.rerun()
@@ -272,7 +272,7 @@ with tab_settori_op:
     with col_op:
         st.subheader("👷 Operatori")
         with get_connection() as conn:
-            settori_opts = pd.read_sql("SELECT id, nome FROM settori", conn)
+            settori_opts = pd.read_sql("SELECT id, nome FROM public.settori", conn)
 
         with st.form("add_op_form", clear_on_submit=True):
             nome_op = st.text_input("Nome Operatore")
@@ -282,7 +282,7 @@ with tab_settori_op:
                 s_id = settori_opts[settori_opts["nome"] == settore_id_op]["id"].values[0]
                 with get_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("INSERT INTO operatori (nome, settore_id) VALUES (%s, %s)", (nome_op.strip(), int(s_id)))
+                        cur.execute("INSERT INTO public.operatori (nome, settore_id) VALUES (%s, %s)", (nome_op.strip(), int(s_id)))
                         conn.commit()
                 st.success("Operatore inserito!")
                 st.rerun()
@@ -290,7 +290,7 @@ with tab_settori_op:
         with get_connection() as conn:
             df_op = pd.read_sql("""
                 SELECT o.id, o.nome as operatore, s.nome as settore 
-                FROM operatori o LEFT JOIN settori s ON o.settore_id = s.id
+                FROM public.operatori o LEFT JOIN public.settori s ON o.settore_id = s.id
             """, conn)
         st.dataframe(df_op, use_container_width=True)
 
@@ -312,7 +312,7 @@ with tab_prodotti:
 
             st.markdown("#### Ore di Lavorazione per Settore")
             with get_connection() as conn:
-                settori_db = pd.read_sql("SELECT * FROM settori", conn)
+                settori_db = pd.read_sql("SELECT * FROM public.settori", conn)
             
             ore_settori = {}
             if not settori_db.empty:
@@ -339,7 +339,7 @@ with tab_prodotti:
                     with get_connection() as conn:
                         with conn.cursor() as cur:
                             cur.execute("""
-                                INSERT INTO prodotti (
+                                INSERT INTO public.prodotti (
                                     nome, 
                                     macchina_gruppo_formato, 
                                     disegno, 
@@ -361,7 +361,7 @@ with tab_prodotti:
                             for s_id, ore_v in ore_settori.items():
                                 if ore_v and float(ore_v) > 0:
                                     cur.execute("""
-                                        INSERT INTO prodotto_ore_settori (prodotto_id, settore_id, ore)
+                                        INSERT INTO public.prodotto_ore_settori (prodotto_id, settore_id, ore)
                                         VALUES (%s, %s, %s)
                                     """, (int(new_prod_id), int(s_id), float(ore_v)))
                             conn.commit()
@@ -376,11 +376,11 @@ with tab_prodotti:
             if s_prod:
                 search_p_term = f"%{s_prod}%"
                 df_p = pd.read_sql(
-                    "SELECT id, nome, macchina_gruppo_formato, disegno, materiale_trattamento, costo_interno, prezzo_vendita FROM prodotti WHERE nome ILIKE %s OR macchina_gruppo_formato ILIKE %s OR disegno ILIKE %s",
+                    "SELECT id, nome, macchina_gruppo_formato, disegno, materiale_trattamento, costo_interno, prezzo_vendita FROM public.prodotti WHERE nome ILIKE %s OR macchina_gruppo_formato ILIKE %s OR disegno ILIKE %s",
                     conn, params=(search_p_term, search_p_term, search_p_term)
                 )
             else:
-                df_p = pd.read_sql("SELECT id, nome, macchina_gruppo_formato, disegno, materiale_trattamento, costo_interno, prezzo_vendita FROM prodotti", conn)
+                df_p = pd.read_sql("SELECT id, nome, macchina_gruppo_formato, disegno, materiale_trattamento, costo_interno, prezzo_vendita FROM public.prodotti", conn)
             
             df_p["margine_%"] = df_p.apply(lambda r: round(((r["prezzo_vendita"] - r["costo_interno"]) / r["prezzo_vendita"] * 100), 2) if r["prezzo_vendita"] > 0 else 0.0, axis=1)
 
@@ -391,7 +391,7 @@ with tab_prodotti:
             if st.button("🗑️ Elimina Prodotto"):
                 with get_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("DELETE FROM prodotti WHERE id = %s", (int(del_p_id),))
+                        cur.execute("DELETE FROM public.prodotti WHERE id = %s", (int(del_p_id),))
                         conn.commit()
                 st.warning("Prodotto eliminato!")
                 st.rerun()
@@ -405,8 +405,8 @@ with tab_prev:
     
     with pr_tab1:
         with get_connection() as conn:
-            az_options = pd.read_sql("SELECT id, ragione_sociale FROM aziende", conn)
-            prod_options = pd.read_sql("SELECT id, nome, prezzo_vendita FROM prodotti", conn)
+            az_options = pd.read_sql("SELECT id, ragione_sociale FROM public.aziende", conn)
+            prod_options = pd.read_sql("SELECT id, nome, prezzo_vendita FROM public.prodotti", conn)
 
         if az_options.empty or prod_options.empty:
             st.warning("Inserisci almeno un'Azienda e un Prodotto prima di creare un preventivo.")
@@ -434,7 +434,7 @@ with tab_prev:
             if st.session_state.cart_preventivo:
                 df_cart = pd.DataFrame(st.session_state.cart_preventivo)
                 st.table(df_cart[["prodotto", "quantita", "prezzo_unitario", "prezzo_totale"]])
-                totale_prev = df_cart["prezzo_totale"].sum()
+                totale_prev = float(df_cart["prezzo_totale"].sum())
                 st.markdown(f"### Totale Preventivo: `{totale_prev:,.2f} €`")
 
                 c_sav, c_clr = st.columns(2)
@@ -442,16 +442,16 @@ with tab_prev:
                     with get_connection() as conn:
                         with conn.cursor() as cur:
                             cur.execute("""
-                                INSERT INTO preventivi (azienda_id, prezzo_totale, stato, data_creazione)
+                                INSERT INTO public.preventivi (azienda_id, prezzo_totale, stato, data_creazione)
                                 VALUES (%s, %s, 'In attesa', CURRENT_TIMESTAMP) RETURNING id
                             """, (int(az_id_val), totale_prev))
                             new_prev_id = cur.fetchone()[0]
 
                             for item in st.session_state.cart_preventivo:
                                 cur.execute("""
-                                    INSERT INTO preventivo_dettagli (preventivo_id, prodotto_id, quantita, prezzo_unitario, prezzo_totale)
+                                    INSERT INTO public.preventivo_dettagli (preventivo_id, prodotto_id, quantita, prezzo_unitario, prezzo_totale)
                                     VALUES (%s, %s, %s, %s, %s)
-                                """, (new_prev_id, item["prodotto_id"], item["quantita"], item["prezzo_unitario"], item["prezzo_totale"]))
+                                """, (int(new_prev_id), int(item["prodotto_id"]), int(item["quantita"]), float(item["prezzo_unitario"]), float(item["prezzo_totale"])))
                             conn.commit()
                     st.success("Preventivo salvato!")
                     st.session_state.cart_preventivo = []
@@ -466,7 +466,7 @@ with tab_prev:
         with get_connection() as conn:
             df_prev_all = pd.read_sql("""
                 SELECT p.id, a.ragione_sociale, p.prezzo_totale, p.stato, p.data_creazione
-                FROM preventivi p LEFT JOIN aziende a ON p.azienda_id = a.id
+                FROM public.preventivi p LEFT JOIN public.aziende a ON p.azienda_id = a.id
                 ORDER BY p.id DESC
             """, conn)
         st.dataframe(df_prev_all, use_container_width=True)
@@ -479,7 +479,7 @@ with tab_prev:
             if st.button("Aggiorna Stato Preventivo"):
                 with get_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("UPDATE preventivi SET stato = %s WHERE id = %s", (nuovo_stato, int(p_action_id)))
+                        cur.execute("UPDATE public.preventivi SET stato = %s WHERE id = %s", (nuovo_stato, int(p_action_id)))
                         conn.commit()
                 st.success(f"Preventivo #{p_action_id} aggiornato!")
                 st.rerun()
@@ -487,12 +487,12 @@ with tab_prev:
             with get_connection() as conn:
                 prev_info = pd.read_sql("""
                     SELECT p.id, a.ragione_sociale, p.data_creazione, p.prezzo_totale
-                    FROM preventivi p LEFT JOIN aziende a ON p.azienda_id = a.id WHERE p.id = %s
+                    FROM public.preventivi p LEFT JOIN public.aziende a ON p.azienda_id = a.id WHERE p.id = %s
                 """, conn, params=(int(p_action_id),)).iloc[0]
 
                 items_info = pd.read_sql("""
                     SELECT pr.nome as prodotto, d.quantita, d.prezzo_unitario, d.prezzo_totale
-                    FROM preventivo_dettagli d LEFT JOIN prodotti pr ON d.prodotto_id = pr.id WHERE d.preventivo_id = %s
+                    FROM public.preventivo_dettagli d LEFT JOIN public.prodotti pr ON d.prodotto_id = pr.id WHERE d.preventivo_id = %s
                 """, conn, params=(int(p_action_id),)).to_dict('records')
 
             data_str = str(prev_info["data_creazione"])[:10] if prev_info["data_creazione"] else datetime.today().strftime('%Y-%m-%d')
@@ -516,7 +516,7 @@ with tab_lav:
     with get_connection() as conn:
         df_in_lav = pd.read_sql("""
             SELECT p.id, a.ragione_sociale, p.prezzo_totale, p.data_creazione
-            FROM preventivi p LEFT JOIN aziende a ON p.azienda_id = a.id
+            FROM public.preventivi p LEFT JOIN public.aziende a ON p.azienda_id = a.id
             WHERE p.stato = 'In lavorazione'
         """, conn)
 
@@ -526,8 +526,8 @@ with tab_lav:
         sel_lav_id = st.selectbox("Seleziona Ordine", df_in_lav["id"].tolist())
         
         with get_connection() as conn:
-            op_list = pd.read_sql("SELECT id, nome FROM operatori", conn)
-            sec_list = pd.read_sql("SELECT id, nome FROM settori", conn)
+            op_list = pd.read_sql("SELECT id, nome FROM public.operatori", conn)
+            sec_list = pd.read_sql("SELECT id, nome FROM public.settori", conn)
 
         with st.form("form_registra_ore"):
             col_l1, col_l2, col_l3 = st.columns(3)
@@ -543,9 +543,9 @@ with tab_lav:
                 with get_connection() as conn:
                     with conn.cursor() as cur:
                         cur.execute("""
-                            INSERT INTO lavorazioni (preventivo_id, settore_id, operatore_id, ore_effettive, note)
+                            INSERT INTO public.lavorazioni (preventivo_id, settore_id, operatore_id, ore_effettive, note)
                             VALUES (%s, %s, %s, %s, %s)
-                        """, (int(sel_lav_id), int(sec_val), int(op_val), ore_eff, (note_lav or "").strip()))
+                        """, (int(sel_lav_id), int(sec_val), int(op_val), float(ore_eff), (note_lav or "").strip()))
                         conn.commit()
                 st.success("Ore registrate!")
                 st.rerun()
@@ -553,9 +553,9 @@ with tab_lav:
         with get_connection() as conn:
             df_hist = pd.read_sql("""
                 SELECT l.id, s.nome as settore, o.nome as operatore, l.ore_effettive, l.note, l.data_registrazione
-                FROM lavorazioni l
-                LEFT JOIN settori s ON l.settore_id = s.id
-                LEFT JOIN operatori o ON l.operatore_id = o.id
+                FROM public.lavorazioni l
+                LEFT JOIN public.settori s ON l.settore_id = s.id
+                LEFT JOIN public.operatori o ON l.operatore_id = o.id
                 WHERE l.preventivo_id = %s
             """, conn, params=(int(sel_lav_id),))
         st.dataframe(df_hist, use_container_width=True)
@@ -563,7 +563,7 @@ with tab_lav:
         if st.button("✅ Segna Ordine come Completato"):
             with get_connection() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("UPDATE preventivi SET stato = 'Completato' WHERE id = %s", (int(sel_lav_id),))
+                    cur.execute("UPDATE public.preventivi SET stato = 'Completato' WHERE id = %s", (int(sel_lav_id),))
                     conn.commit()
             st.success(f"Ordine #{sel_lav_id} completato!")
             st.rerun()
@@ -581,7 +581,7 @@ with tab_rep:
         try:
             query_rep = """
                 SELECT p.id, a.ragione_sociale, p.prezzo_totale, p.stato, p.data_creazione
-                FROM preventivi p LEFT JOIN aziende a ON p.azienda_id = a.id
+                FROM public.preventivi p LEFT JOIN public.aziende a ON p.azienda_id = a.id
                 WHERE p.data_creazione BETWEEN %s AND %s
             """
             df_rep = pd.read_sql(query_rep, conn, params=(d_inizio, d_fine))
@@ -619,12 +619,12 @@ with tab_ai:
                 with get_connection() as conn:
                     top_clients = pd.read_sql("""
                         SELECT a.ragione_sociale, SUM(p.prezzo_totale) as totale
-                        FROM preventivi p JOIN aziende a ON p.azienda_id = a.id
+                        FROM public.preventivi p JOIN public.aziende a ON p.azienda_id = a.id
                         WHERE p.stato IN ('In lavorazione', 'Completato')
                         GROUP BY a.ragione_sociale ORDER BY totale DESC LIMIT 5
                     """, conn).to_string()
                     
-                    top_prod = pd.read_sql("SELECT nome, prezzo_vendita FROM prodotti LIMIT 5", conn).to_string()
+                    top_prod = pd.read_sql("SELECT nome, prezzo_vendita FROM public.prodotti LIMIT 5", conn).to_string()
 
                 system_prompt = f"""
                 Sei l'assistente ERP dell'azienda. Rispondi in italiano con precisione.
