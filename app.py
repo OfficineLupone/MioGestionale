@@ -8,7 +8,7 @@ from database import init_db, get_connection
 
 # Configurazione Pagina
 st.set_page_config(
-    page_title="Enterprise ERP System",
+    page_title="Lupone Enterprise",
     page_icon="🟢",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -165,7 +165,7 @@ def genera_pdf_preventivo(id_preventivo, ragione_sociale, citta, provincia, cap,
     # Intestazione Fornitore (Sinistra)
     pdf.set_font("Helvetica", 'B', 14)
     pdf.set_text_color(11, 60, 45)
-    pdf.cell(100, 6, "GESTIONALE ENTERPRISE S.R.L.", ln=False)
+    pdf.cell(100, 6, "GESTIONALE LUPONE S.R.L.", ln=False)
     
     # Spett.le Cliente (Destra)
     pdf.set_font("Helvetica", 'B', 9)
