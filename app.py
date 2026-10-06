@@ -41,7 +41,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Generator PDF senza problemi di Encoding/Euro
+# Generatore PDF senza problemi di Encoding/Euro
 def genera_pdf_preventivo(id_preventivo, ragione_sociale, data, articoli, totale):
     pdf = FPDF()
     pdf.add_page()
@@ -85,7 +85,7 @@ client = get_gemini_client()
 st.title("🏢 Gestione Aziendale Enterprise")
 
 tab_dash, tab_aziende, tab_settori_op, tab_prodotti, tab_prev, tab_lav, tab_rep, tab_ai = st.tabs([
-    "📊 Dashboard", "🏢 Aziende", "⚙️️ Settori e Operatori",
+    "📊 Dashboard", "🏢 Aziende", "⚙ Settori e Operatori",
     "📦 Prodotti", "📄 Preventivi", "🛠️ Lavorazione",
     "📈 Report", "🤖 Assistente AI"
 ])
@@ -101,7 +101,6 @@ with tab_dash:
         prev_accettati = pd.read_sql("SELECT COUNT(*), COALESCE(SUM(prezzo_totale), 0) FROM preventivi WHERE stato = 'In lavorazione' OR stato = 'Completato'", conn)
         prod_lavorazione = pd.read_sql("SELECT COUNT(*) FROM preventivi WHERE stato = 'In lavorazione'", conn).iloc[0, 0]
         
-        # Gestione sicura per incassi del mese corrente
         try:
             incassi_mese = pd.read_sql("""
                 SELECT COALESCE(SUM(prezzo_totale), 0) FROM preventivi 
@@ -163,16 +162,19 @@ with tab_aziende:
             sdi = col_a2.text_input("Codice SDI")
             referente = col_a3.text_input("Referente Aziendale")
             
-            if st.form_submit_button("Salva Azienda") and rs:
-                with get_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                            INSERT INTO aziende (ragione_sociale, piva, email, telefono, codice_sdi, referente)
-                            VALUES (%s, %s, %s, %s, %s, %s)
-                        """, (rs, piva, email, tel, sdi, referente))
-                        conn.commit()
-                st.success(f"Azienda '{rs}' aggiunta!")
-                st.rerun()
+            if st.form_submit_button("Salva Azienda"):
+                if not rs or not rs.strip():
+                    st.error("La Ragione Sociale è obbligatoria.")
+                else:
+                    with get_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("""
+                                INSERT INTO aziende (ragione_sociale, piva, email, telefono, codice_sdi, referente)
+                                VALUES (%s, %s, %s, %s, %s, %s)
+                            """, (rs.strip(), piva or "", email or "", tel or "", sdi or "", referente or ""))
+                            conn.commit()
+                    st.success(f"Azienda '{rs}' aggiunta!")
+                    st.rerun()
 
         st.markdown("### 🔍 Cerca Azienda")
         search_az = st.text_input("Filtra per Ragione Sociale, P.IVA o Referente", key="search_az")
@@ -241,7 +243,7 @@ with tab_settori_op:
             if st.form_submit_button("Aggiungi Settore") and nome_settore:
                 with get_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("INSERT INTO settori (nome) VALUES (%s)", (nome_settore,))
+                        cur.execute("INSERT INTO settori (nome) VALUES (%s)", (nome_settore.strip(),))
                         conn.commit()
                 st.success("Settore creato!")
                 st.rerun()
@@ -273,7 +275,7 @@ with tab_settori_op:
                 s_id = settori_opts[settori_opts["nome"] == settore_id_op]["id"].values[0]
                 with get_connection() as conn:
                     with conn.cursor() as cur:
-                        cur.execute("INSERT INTO operatori (nome, settore_id) VALUES (%s, %s)", (nome_op, int(s_id)))
+                        cur.execute("INSERT INTO operatori (nome, settore_id) VALUES (%s, %s)", (nome_op.strip(), int(s_id)))
                         conn.commit()
                 st.success("Operatore inserito!")
                 st.rerun()
@@ -313,27 +315,44 @@ with tab_prodotti:
                         ore_settori[row['id']] = st.number_input(f"Ore: {row['nome']}", min_value=0.0, step=0.5, value=0.0)
 
             col_c1, col_c2 = st.columns(2)
-            costo_int = col_c1.number_input("Costo Interno (€)", min_value=0.0, step=1.0)
-            prezzo_ven = col_c2.number_input("Prezzo di Vendita (€)", min_value=0.0, step=1.0)
+            costo_int = col_c1.number_input("Costo Interno (€)", min_value=0.0, step=1.0, value=0.0)
+            prezzo_ven = col_c2.number_input("Prezzo di Vendita (€)", min_value=0.0, step=1.0, value=0.0)
 
-            if st.form_submit_button("Salva Prodotto") and p_nome:
-                with get_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("""
-                            INSERT INTO prodotti (nome, macchina_gruppo_formato, disegno, materiale_trattamento, costo_interno, prezzo_vendita)
-                            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
-                        """, (p_nome, p_formato, p_disegno, p_mat, costo_int, prezzo_ven))
-                        new_prod_id = cur.fetchone()[0]
+            if st.form_submit_button("Salva Prodotto"):
+                if not p_nome or not p_nome.strip():
+                    st.error("Il Nome del Prodotto è obbligatorio.")
+                else:
+                    with get_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("""
+                                INSERT INTO prodotti (
+                                    nome, 
+                                    macchina_gruppo_formato, 
+                                    disegno, 
+                                    materiale_trattamento, 
+                                    costo_interno, 
+                                    prezzo_vendita
+                                )
+                                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+                            """, (
+                                p_nome.strip(), 
+                                p_formato.strip() if p_formato else "", 
+                                p_disegno.strip() if p_disegno else "", 
+                                p_mat.strip() if p_mat else "", 
+                                float(costo_int or 0.0), 
+                                float(prezzo_ven or 0.0)
+                            ))
+                            new_prod_id = cur.fetchone()[0]
 
-                        for s_id, ore_v in ore_settori.items():
-                            if ore_v > 0:
-                                cur.execute("""
-                                    INSERT INTO prodotto_ore_settori (prodotto_id, settore_id, ore)
-                                    VALUES (%s, %s, %s)
-                                """, (new_prod_id, s_id, ore_v))
-                        conn.commit()
-                st.success(f"Prodotto '{p_nome}' salvato con successo!")
-                st.rerun()
+                            for s_id, ore_v in ore_settori.items():
+                                if ore_v and float(ore_v) > 0:
+                                    cur.execute("""
+                                        INSERT INTO prodotto_ore_settori (prodotto_id, settore_id, ore)
+                                        VALUES (%s, %s, %s)
+                                    """, (int(new_prod_id), int(s_id), float(ore_v)))
+                            conn.commit()
+                    st.success(f"Prodotto '{p_nome}' salvato con successo!")
+                    st.rerun()
 
     with p_tab2:
         st.subheader("🔍 Cerca e Gestisci Prodotti")
@@ -512,7 +531,7 @@ with tab_lav:
                         cur.execute("""
                             INSERT INTO lavorazioni (preventivo_id, settore_id, operatore_id, ore_effettive, note)
                             VALUES (%s, %s, %s, %s, %s)
-                        """, (int(sel_lav_id), int(sec_val), int(op_val), ore_eff, note_lav))
+                        """, (int(sel_lav_id), int(sec_val), int(op_val), ore_eff, note_lav or ""))
                         conn.commit()
                 st.success("Ore registrate!")
                 st.rerun()
