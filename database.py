@@ -45,7 +45,7 @@ def get_connection():
             conn.close()
 
 def init_db():
-    """Inizializza lo schema del database con vincoli e indici ottimali."""
+    """Inizializza e aggiorna lo schema del database."""
     try:
         with get_connection() as conn:
             with conn.cursor() as c:
@@ -62,7 +62,7 @@ def init_db():
                     CREATE TABLE IF NOT EXISTS operatori (
                         id SERIAL PRIMARY KEY,
                         nome VARCHAR(255) NOT NULL,
-                        settore_id INTEGER NOT NULL REFERENCES settori(id) ON DELETE CASCADE
+                        settore_id INTEGER REFERENCES settori(id) ON DELETE SET NULL
                     );
                 """)
 
@@ -95,37 +95,62 @@ def init_db():
                         id SERIAL PRIMARY KEY,
                         ragione_sociale VARCHAR(255) UNIQUE NOT NULL,
                         piva VARCHAR(50),
-                        email VARCHAR(255)
+                        email VARCHAR(255),
+                        telefono VARCHAR(50),
+                        codice_sdi VARCHAR(50),
+                        referente VARCHAR(255)
                     );
                 """)
+                
+                # Migrazione colonne aggiuntive per Aziende
+                colonne_aziende = [
+                    ("telefono", "VARCHAR(50)"),
+                    ("codice_sdi", "VARCHAR(50)"),
+                    ("referente", "VARCHAR(255)")
+                ]
+                for col_nome, col_def in colonne_aziende:
+                    c.execute(f"ALTER TABLE aziende ADD COLUMN IF NOT EXISTS {col_nome} {col_def};")
 
                 # Tabella Preventivi
                 c.execute("""
                     CREATE TABLE IF NOT EXISTS preventivi (
                         id SERIAL PRIMARY KEY,
                         azienda_id INTEGER REFERENCES aziende(id) ON DELETE SET NULL,
-                        prodotto_id INTEGER REFERENCES prodotti(id) ON DELETE SET NULL,
-                        quantita INTEGER NOT NULL DEFAULT 1,
                         prezzo_totale NUMERIC(10, 2) DEFAULT 0.00,
                         ore_totali_stimate NUMERIC(8, 2) DEFAULT 0.00,
-                        stato VARCHAR(50) DEFAULT 'In attesa'
+                        stato VARCHAR(50) DEFAULT 'In attesa',
+                        data_creazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
 
-                # Tabella Lavori/Consuntivo
+                # Tabella Dettaglio Preventivo (Articoli)
                 c.execute("""
-                    CREATE TABLE IF NOT EXISTS lavori (
+                    CREATE TABLE IF NOT EXISTS preventivo_dettagli (
                         id SERIAL PRIMARY KEY,
                         preventivo_id INTEGER REFERENCES preventivi(id) ON DELETE CASCADE,
-                        settore_nome VARCHAR(255),
-                        ore_effettive NUMERIC(8, 2) DEFAULT 0.00,
-                        note TEXT
+                        prodotto_id INTEGER REFERENCES prodotti(id) ON DELETE CASCADE,
+                        quantita INTEGER NOT NULL DEFAULT 1,
+                        prezzo_unitario NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
+                        prezzo_totale NUMERIC(10, 2) NOT NULL DEFAULT 0.00
                     );
                 """)
 
-                # Indici per velocizzare le JOIN frequenti
+                # Tabella Lavori e Registrazione Ore Effettive
+                c.execute("""
+                    CREATE TABLE IF NOT EXISTS lavorazioni (
+                        id SERIAL PRIMARY KEY,
+                        preventivo_id INTEGER REFERENCES preventivi(id) ON DELETE CASCADE,
+                        settore_id INTEGER REFERENCES settori(id) ON DELETE CASCADE,
+                        operatore_id INTEGER REFERENCES operatori(id) ON DELETE SET NULL,
+                        ore_effettive NUMERIC(8, 2) DEFAULT 0.00,
+                        note TEXT,
+                        data_registrazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+
+                # Indici
                 c.execute("CREATE INDEX IF NOT EXISTS idx_preventivi_azienda ON preventivi(azienda_id);")
-                c.execute("CREATE INDEX IF NOT EXISTS idx_preventivi_prodotto ON preventivi(prodotto_id);")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_prodotti_nome ON prodotti(nome);")
                 
             conn.commit()
     except Exception as e:
