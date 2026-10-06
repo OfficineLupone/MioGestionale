@@ -1,157 +1,133 @@
 import os
 import psycopg2
-import streamlit as st
 from contextlib import contextmanager
-
-def _get_clean_db_url() -> str:
-    db_url = st.secrets.get("DATABASE_URL", "") or os.environ.get("DATABASE_URL", "")
-    
-    if not db_url:
-        raise ValueError(
-            "DATABASE_URL non trovato nei Secrets di Streamlit o nelle variabili d'ambiente."
-        )
-
-    db_url = db_url.strip().strip('"').strip("'")
-
-    if db_url.startswith("postgres://"):
-        db_url = db_url.replace("postgres://", "postgresql://", 1)
-
-    if "channel_binding=" in db_url:
-        db_url = db_url.replace("&channel_binding=require", "").replace("?channel_binding=require", "")
-
-    if "sslmode=" not in db_url:
-        separator = "&" if "?" in db_url else "?"
-        db_url = f"{db_url}{separator}sslmode=require"
-
-    return db_url
+import streamlit as st
 
 @contextmanager
 def get_connection():
-    """Apre una connessione PostgreSQL con gestione sicura dei rollback e delle chiusure."""
-    db_url = _get_clean_db_url()
-    conn = None
+    """
+    Gestisce la connessione al database PostgreSQL utilizzando le credenziali 
+    presenti in st.secrets o nelle variabili d'ambiente.
+    """
     try:
-        conn = psycopg2.connect(db_url, connect_timeout=10)
+        conn_str = st.secrets.get("postgres", {}).get("url") or os.getenv("DATABASE_URL")
+        
+        if conn_str:
+            conn = psycopg2.connect(conn_str)
+        else:
+            conn = psycopg2.connect(
+                host=st.secrets["postgres"]["host"],
+                database=st.secrets["postgres"]["database"],
+                user=st.secrets["postgres"]["user"],
+                password=st.secrets["postgres"]["password"],
+                port=st.secrets["postgres"].get("port", 5432)
+            )
         yield conn
     except Exception as e:
-        if conn:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
         raise RuntimeError(f"Errore connessione database: {e}") from e
     finally:
-        if conn:
+        if 'conn' in locals() and conn:
             conn.close()
 
 def init_db():
-    """Inizializza e aggiorna lo schema del database."""
-    try:
-        with get_connection() as conn:
-            with conn.cursor() as c:
-                # Tabella Settori
-                c.execute("""
-                    CREATE TABLE IF NOT EXISTS settori (
-                        id SERIAL PRIMARY KEY,
-                        nome VARCHAR(255) UNIQUE NOT NULL
-                    );
-                """)
+    """
+    Crea la struttura delle tabelle se non esiste e applica le migrazioni necessarie.
+    """
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # 1. Anagrafica Aziende
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS aziende (
+                    id SERIAL PRIMARY KEY,
+                    ragione_sociale VARCHAR(255) NOT NULL,
+                    piva VARCHAR(50),
+                    email VARCHAR(255),
+                    telefono VARCHAR(50),
+                    codice_sdi VARCHAR(20),
+                    referente VARCHAR(255)
+                );
+            """)
 
-                # Tabella Operatori
-                c.execute("""
-                    CREATE TABLE IF NOT EXISTS operatori (
-                        id SERIAL PRIMARY KEY,
-                        nome VARCHAR(255) NOT NULL,
-                        settore_id INTEGER REFERENCES settori(id) ON DELETE SET NULL
-                    );
-                """)
+            # 2. Settori
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS settori (
+                    id SERIAL PRIMARY KEY,
+                    nome VARCHAR(100) UNIQUE NOT NULL
+                );
+            """)
 
-                # Tabella Prodotti
-                c.execute("""
-                    CREATE TABLE IF NOT EXISTS prodotti (
-                        id SERIAL PRIMARY KEY,
-                        nome VARCHAR(255) UNIQUE NOT NULL,
-                        materiale_trattamento TEXT,
-                        macchina_gruppo_formato TEXT,
-                        disegno TEXT,
-                        costo_interno NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
-                        prezzo_vendita NUMERIC(10, 2) NOT NULL DEFAULT 0.00
-                    );
-                """)
+            # 3. Operatori
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS operatori (
+                    id SERIAL PRIMARY KEY,
+                    nome VARCHAR(255) NOT NULL,
+                    settore_id INTEGER REFERENCES settori(id) ON DELETE SET NULL
+                );
+            """)
 
-                # Tabella Relazione Prodotto-Ore-Settori
-                c.execute("""
-                    CREATE TABLE IF NOT EXISTS prodotto_ore_settori (
-                        prodotto_id INTEGER REFERENCES prodotti(id) ON DELETE CASCADE,
-                        settore_id INTEGER REFERENCES settori(id) ON DELETE CASCADE,
-                        ore NUMERIC(8, 2) NOT NULL DEFAULT 0.00,
-                        PRIMARY KEY (prodotto_id, settore_id)
-                    );
-                """)
+            # 4. Prodotti
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS prodotti (
+                    id SERIAL PRIMARY KEY,
+                    nome VARCHAR(255) NOT NULL,
+                    macchina_gruppo_formato VARCHAR(255),
+                    disegno VARCHAR(255),
+                    materiale_trattamento VARCHAR(255),
+                    costo_interno NUMERIC(10, 2) DEFAULT 0.0,
+                    prezzo_vendita NUMERIC(10, 2) DEFAULT 0.0
+                );
+            """)
 
-                # Tabella Aziende
-                c.execute("""
-                    CREATE TABLE IF NOT EXISTS aziende (
-                        id SERIAL PRIMARY KEY,
-                        ragione_sociale VARCHAR(255) UNIQUE NOT NULL,
-                        piva VARCHAR(50),
-                        email VARCHAR(255),
-                        telefono VARCHAR(50),
-                        codice_sdi VARCHAR(50),
-                        referente VARCHAR(255)
-                    );
-                """)
-                
-                # Migrazione colonne aggiuntive per Aziende
-                colonne_aziende = [
-                    ("telefono", "VARCHAR(50)"),
-                    ("codice_sdi", "VARCHAR(50)"),
-                    ("referente", "VARCHAR(255)")
-                ]
-                for col_nome, col_def in colonne_aziende:
-                    c.execute(f"ALTER TABLE aziende ADD COLUMN IF NOT EXISTS {col_nome} {col_def};")
+            # 5. Ore previste per settore su ogni prodotto
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS prodotto_ore_settori (
+                    id SERIAL PRIMARY KEY,
+                    prodotto_id INTEGER REFERENCES prodotti(id) ON DELETE CASCADE,
+                    settore_id INTEGER REFERENCES settori(id) ON DELETE CASCADE,
+                    ore NUMERIC(8, 2) DEFAULT 0.0
+                );
+            """)
 
-                # Tabella Preventivi
-                c.execute("""
-                    CREATE TABLE IF NOT EXISTS preventivi (
-                        id SERIAL PRIMARY KEY,
-                        azienda_id INTEGER REFERENCES aziende(id) ON DELETE SET NULL,
-                        prezzo_totale NUMERIC(10, 2) DEFAULT 0.00,
-                        ore_totali_stimate NUMERIC(8, 2) DEFAULT 0.00,
-                        stato VARCHAR(50) DEFAULT 'In attesa',
-                        data_creazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
+            # 6. Preventivi
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS preventivi (
+                    id SERIAL PRIMARY KEY,
+                    azienda_id INTEGER REFERENCES aziende(id) ON DELETE CASCADE,
+                    prezzo_totale NUMERIC(10, 2) DEFAULT 0.0,
+                    stato VARCHAR(50) DEFAULT 'In attesa',
+                    data_creazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
 
-                # Tabella Dettaglio Preventivo (Articoli)
-                c.execute("""
-                    CREATE TABLE IF NOT EXISTS preventivo_dettagli (
-                        id SERIAL PRIMARY KEY,
-                        preventivo_id INTEGER REFERENCES preventivi(id) ON DELETE CASCADE,
-                        prodotto_id INTEGER REFERENCES prodotti(id) ON DELETE CASCADE,
-                        quantita INTEGER NOT NULL DEFAULT 1,
-                        prezzo_unitario NUMERIC(10, 2) NOT NULL DEFAULT 0.00,
-                        prezzo_totale NUMERIC(10, 2) NOT NULL DEFAULT 0.00
-                    );
-                """)
+            # MIGRAZIONE AUTOMATICA: Aggiunge 'data_creazione' se il DB esisteva già senza questa colonna
+            cur.execute("""
+                ALTER TABLE preventivi 
+                ADD COLUMN IF NOT EXISTS data_creazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+            """)
 
-                # Tabella Lavori e Registrazione Ore Effettive
-                c.execute("""
-                    CREATE TABLE IF NOT EXISTS lavorazioni (
-                        id SERIAL PRIMARY KEY,
-                        preventivo_id INTEGER REFERENCES preventivi(id) ON DELETE CASCADE,
-                        settore_id INTEGER REFERENCES settori(id) ON DELETE CASCADE,
-                        operatore_id INTEGER REFERENCES operatori(id) ON DELETE SET NULL,
-                        ore_effettive NUMERIC(8, 2) DEFAULT 0.00,
-                        note TEXT,
-                        data_registrazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    );
-                """)
+            # 7. Dettagli Preventivo
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS preventivo_dettagli (
+                    id SERIAL PRIMARY KEY,
+                    preventivo_id INTEGER REFERENCES preventivi(id) ON DELETE CASCADE,
+                    prodotto_id INTEGER REFERENCES prodotti(id) ON DELETE SET NULL,
+                    quantita INTEGER DEFAULT 1,
+                    prezzo_unitario NUMERIC(10, 2) DEFAULT 0.0,
+                    prezzo_totale NUMERIC(10, 2) DEFAULT 0.0
+                );
+            """)
 
-                # Indici
-                c.execute("CREATE INDEX IF NOT EXISTS idx_preventivi_azienda ON preventivi(azienda_id);")
-                c.execute("CREATE INDEX IF NOT EXISTS idx_prodotti_nome ON prodotti(nome);")
-                
+            # 8. Lavorazioni ed Ore Effettive
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS lavorazioni (
+                    id SERIAL PRIMARY KEY,
+                    preventivo_id INTEGER REFERENCES preventivi(id) ON DELETE CASCADE,
+                    settore_id INTEGER REFERENCES settori(id) ON DELETE SET NULL,
+                    operatore_id INTEGER REFERENCES operatori(id) ON DELETE SET NULL,
+                    ore_effettive NUMERIC(8, 2) DEFAULT 0.0,
+                    note TEXT,
+                    data_registrazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
             conn.commit()
-    except Exception as e:
-        raise RuntimeError(f"Errore inizializzazione database: {e}") from e
