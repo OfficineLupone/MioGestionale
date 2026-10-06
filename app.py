@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from fpdf import FPDF
-from datetime import datetime
+from datetime import datetime, date
 from google import genai
 from google.genai import types
 from database import init_db, get_connection
@@ -22,6 +22,18 @@ try:
             cur.execute("ALTER TABLE public.aziende ADD COLUMN IF NOT EXISTS citta TEXT;")
             cur.execute("ALTER TABLE public.aziende ADD COLUMN IF NOT EXISTS provincia TEXT;")
             cur.execute("ALTER TABLE public.aziende ADD COLUMN IF NOT EXISTS cap TEXT;")
+            
+            # Tabella per la registrazione delle ore lavorate
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS public.ore_lavorate (
+                    id SERIAL PRIMARY KEY,
+                    preventivo_id INT REFERENCES public.preventivi(id) ON DELETE CASCADE,
+                    settore_id INT REFERENCES public.settori(id) ON DELETE CASCADE,
+                    operatore_id INT REFERENCES public.operatori(id) ON DELETE SET NULL,
+                    data_lavorazione DATE NOT NULL,
+                    ore NUMERIC(10,2) NOT NULL DEFAULT 0.0
+                );
+            """)
             conn.commit()
 except Exception as e:
     st.error(f"Errore nell'inizializzazione del database: {e}")
@@ -143,17 +155,6 @@ st.markdown("""
         background-color: #07291F !important;
         border-color: #07291F !important;
     }
-
-    .action-card {
-        background-color: #FFFFFF;
-        border: 1px solid #E5E7EB;
-        border-radius: 10px;
-        padding: 12px 16px;
-        margin-bottom: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -162,12 +163,10 @@ def genera_pdf_preventivo(id_preventivo, ragione_sociale, citta, provincia, cap,
     pdf = FPDF()
     pdf.add_page()
     
-    # Intestazione Fornitore (Sinistra)
     pdf.set_font("Helvetica", 'B', 14)
     pdf.set_text_color(11, 60, 45)
     pdf.cell(100, 6, "GESTIONALE LUPONE S.R.L.", ln=False)
     
-    # Spett.le Cliente (Destra)
     pdf.set_font("Helvetica", 'B', 9)
     pdf.set_text_color(100, 100, 100)
     pdf.cell(90, 5, "Spett.le Cliente:", ln=True, align='R')
@@ -176,7 +175,6 @@ def genera_pdf_preventivo(id_preventivo, ragione_sociale, citta, provincia, cap,
     pdf.set_text_color(60, 60, 60)
     pdf.cell(100, 5, "Via dell'Industria, 45 - 20100 Milano (MI)", ln=False)
     
-    # Ragione Sociale Cliente Destra
     pdf.set_font("Helvetica", 'B', 11)
     pdf.set_text_color(17, 24, 39)
     pdf.cell(90, 5, str(ragione_sociale), ln=True, align='R')
@@ -197,7 +195,6 @@ def genera_pdf_preventivo(id_preventivo, ragione_sociale, citta, provincia, cap,
     pdf.line(10, pdf.get_y(), 200, pdf.get_y())
     pdf.ln(6)
     
-    # Titolo Preventivo
     pdf.set_font("Helvetica", 'B', 14)
     pdf.set_text_color(11, 60, 45)
     pdf.cell(0, 8, f"OFFERTA PREVENTIVO N. {id_preventivo} DEL {data}", ln=True)
@@ -207,7 +204,6 @@ def genera_pdf_preventivo(id_preventivo, ragione_sociale, citta, provincia, cap,
     pdf.multi_cell(0, 5, "Con la presente Vi inviamo la nostra migliore offerta commerciale per i prodotti/servizi sotto specificati:")
     pdf.ln(4)
     
-    # Tabella Prodotti
     pdf.set_fill_color(11, 60, 45)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font("Helvetica", 'B', 9)
@@ -312,7 +308,6 @@ with tab_aziende:
     st.subheader("Anagrafica Aziende")
     
     col_top1, col_top2 = st.columns([1, 3])
-    
     with col_top1:
         show_add_az = st.button("➕ Nuova Azienda", use_container_width=True)
     with col_top2:
@@ -337,7 +332,7 @@ with tab_aziende:
                 provincia = c_a8.text_input("Provincia (es. MI)")
                 cap = c_a9.text_input("CAP")
 
-                b_sub, b_close = st.columns([1, 1])
+                b_sub, _ = st.columns([1, 1])
                 if b_sub.form_submit_button("💾 Salva Azienda"):
                     if not rs or not rs.strip():
                         st.error("La Ragione Sociale è obbligatoria.")
@@ -369,7 +364,7 @@ with tab_aziende:
             df_az = pd.read_sql("SELECT * FROM public.aziende ORDER BY ragione_sociale", conn)
 
     if df_az.empty:
-        st.info("Nessuna azienda trovata.")
+        st.info("Nessunaazienda trovata.")
     else:
         for _, row in df_az.iterrows():
             c_info, c_actions = st.columns([4, 2])
@@ -390,7 +385,7 @@ with tab_aziende:
                     st.write(f"**Referente:** {row['referente'] or 'N/D'}")
                     st.write(f"**Indirizzo:** {row['citta'] or ''} ({row['provincia'] or ''}) {row['cap'] or ''}")
 
-                with col_b2.popover("✏️"):
+                with col_b2.popover("✏️️"):
                     st.markdown(f"#### Modifica {row['ragione_sociale']}")
                     with st.form(f"mod_az_{row['id']}"):
                         m_rs = st.text_input("Ragione Sociale", value=row['ragione_sociale'])
@@ -732,7 +727,7 @@ with tab_prev:
         else:
             for _, r_prev in df_prev_list.iterrows():
                 with st.expander(f"Preventivo N. {r_prev['id']} - {r_prev['ragione_sociale']} ({r_prev['prezzo_totale']:,.2f} €) - [{r_prev['stato']}]"):
-                    c_s1, c_s2 = st.columns([2, 2])
+                    c_s1, _ = st.columns([2, 2])
                     
                     with c_s1:
                         stati_possibili = ["Bozza", "In lavorazione", "Completato", "Annullato"]
@@ -784,6 +779,7 @@ with tab_prev:
 # ---------------------------------------------------------
 with tab_lav:
     st.subheader("Ordini in Lavorazione")
+    
     with get_connection() as conn:
         df_ord_lav = pd.read_sql("""
             SELECT p.id as preventivo_id, a.ragione_sociale, p.prezzo_totale, p.data_creazione
@@ -793,30 +789,123 @@ with tab_lav:
             ORDER BY p.id DESC
         """, conn)
 
+        df_all_settori = pd.read_sql("SELECT * FROM public.settori ORDER BY nome", conn)
+        df_all_operatori = pd.read_sql("SELECT * FROM public.operatori ORDER BY nome", conn)
+
     if df_ord_lav.empty:
-        st.info("Nessun ordine in stato 'In lavorazione'.")
+        st.info("Nessun ordine attualmente in lavorazione.")
     else:
         for _, r_lav in df_ord_lav.iterrows():
-            with st.container():
-                st.markdown(f"### Ordine #{r_lav['preventivo_id']} - {r_lav['ragione_sociale']}")
-                st.caption(f"Valore: {r_lav['prezzo_totale']:,.2f} € | Data: {r_lav['data_creazione']}")
+            p_id = int(r_lav['preventivo_id'])
+            
+            # Calcolo ore totali registrate per l'ordine
+            with get_connection() as conn:
+                tot_ore_res = pd.read_sql("SELECT COALESCE(SUM(ore), 0) FROM public.ore_lavorate WHERE preventivo_id = %s", conn, params=(p_id,)).iloc[0, 0]
+
+            col_inf, col_btn1, col_btn2, col_btn3 = st.columns([3, 1.5, 1.2, 1.8])
+            
+            with col_inf:
+                st.markdown(f"### Ordine #{p_id} - {r_lav['ragione_sociale']}")
+                st.caption(f"Valore: **{r_lav['prezzo_totale']:,.2f} €** | Ore Totali Registrate: **{tot_ore_res:,.1f} h**")
+
+            # PULSANTE 1: REGISTRA ORE
+            with col_btn1.popover("⏱️ Registra Ore"):
+                st.markdown(f"#### Registrazione Ore - Ordine #{p_id}")
+                with st.form(f"form_reg_ore_{p_id}"):
+                    d_lav = st.date_input("Data Lavorazione", value=date.today(), key=f"date_lav_{p_id}")
+                    
+                    st.markdown("---")
+                    st.markdown("**Ore e Operatori per Settore:**")
+                    
+                    inputs_ore = {}
+                    if df_all_settori.empty:
+                        st.warning("Nessun settore configurato.")
+                    else:
+                        for _, s_row in df_all_settori.iterrows():
+                            s_id = int(s_row['id'])
+                            st.markdown(f"**Settore: {s_row['nome']}**")
+                            
+                            # Filtra operatori del settore o mostra tutti se non assegnati
+                            ops_s = df_all_operatori[df_all_operatori['settore_id'] == s_id]
+                            if ops_s.empty:
+                                ops_s = df_all_operatori
+                            
+                            op_list = ["Nessuno"] + ops_s['nome'].tolist() if not ops_s.empty else ["Nessuno"]
+                            
+                            c_op, c_hr = st.columns(2)
+                            sel_op = c_op.selectbox("Operatore", op_list, key=f"op_s_{p_id}_{s_id}")
+                            num_hr = c_hr.number_input("Ore", min_value=0.0, max_value=24.0, step=0.5, value=0.0, key=f"hr_s_{p_id}_{s_id}")
+                            
+                            if sel_op != "Nessuno" and num_hr > 0:
+                                op_id_val = int(df_all_operatori[df_all_operatori['nome'] == sel_op]['id'].values[0])
+                                inputs_ore[s_id] = {"operatore_id": op_id_val, "ore": float(num_hr)}
+
+                    if st.form_submit_button("💾 Salva Lavorazione"):
+                        if not inputs_ore:
+                            st.error("Seleziona almeno un operatore e inserisci le ore lavorate.")
+                        else:
+                            with get_connection() as conn:
+                                with conn.cursor() as cur:
+                                    for sec_id, data_o in inputs_ore.items():
+                                        cur.execute("""
+                                            INSERT INTO public.ore_lavorate (preventivo_id, settore_id, operatore_id, data_lavorazione, ore)
+                                            VALUES (%s, %s, %s, %s, %s)
+                                        """, (p_id, sec_id, data_o['operatore_id'], d_lav, data_o['ore']))
+                                    conn.commit()
+                            st.success("Ore registrate con successo!")
+                            st.rerun()
+
+            # PULSANTE 2: DETTAGLIO
+            with col_btn2.popover("🔍 Dettaglio"):
+                st.markdown(f"#### Dettaglio Ordine #{p_id}")
                 
+                # Articoli in ordine
                 with get_connection() as conn:
-                    df_det_lav = pd.read_sql("""
-                        SELECT pr.nome as prodotto, pd.quantita, pr.id as prodotto_id
+                    df_det_prod = pd.read_sql("""
+                        SELECT pr.nome as Prodotto, pd.quantita as Quantità, pd.prezzo_totale as Totale
                         FROM public.preventivo_dettagli pd
                         JOIN public.prodotti pr ON pd.prodotto_id = pr.id
                         WHERE pd.preventivo_id = %s
-                    """, conn, params=(int(r_lav['preventivo_id']),))
+                    """, conn, params=(p_id,))
+                    
+                    df_det_ore = pd.read_sql("""
+                        SELECT ol.data_lavorazione as Data, s.nome as Settore, o.nome as Operatore, ol.ore as Ore
+                        FROM public.ore_lavorate ol
+                        JOIN public.settori s ON ol.settore_id = s.id
+                        LEFT JOIN public.operatori o ON ol.operatore_id = o.id
+                        WHERE ol.preventivo_id = %s
+                        ORDER BY ol.data_lavorazione DESC
+                    """, conn, params=(p_id,))
 
-                st.dataframe(df_det_lav[["prodotto", "quantita"]], use_container_width=True)
+                st.markdown("**Prodotti in Ordine:**")
+                st.dataframe(df_det_prod, use_container_width=True)
+                
                 st.markdown("---")
+                st.markdown("**Storico Ore Lavorate:**")
+                if df_det_ore.empty:
+                    st.info("Ancora nessuna ora registrata per questo ordine.")
+                else:
+                    st.dataframe(df_det_ore, use_container_width=True)
+                    st.markdown(f"**Totale Ore Effettuate:** `{df_det_ore['Ore'].sum():,.1f} h`")
+
+            # PULSANTE 3: CAMBIA STATO IN COMPLETATO
+            with col_btn3:
+                if st.button("✅ Completato", key=f"btn_comp_{p_id}", use_container_width=True):
+                    with get_connection() as conn:
+                        with conn.cursor() as cur:
+                            cur.execute("UPDATE public.preventivi SET stato = 'Completato' WHERE id = %s", (p_id,))
+                            conn.commit()
+                    st.success(f"Ordine #{p_id} spostato in 'Completato' (Sezione Report)!")
+                    st.rerun()
+
+            st.markdown("---")
 
 # ---------------------------------------------------------
 # 7. REPORT
 # ---------------------------------------------------------
 with tab_rep:
-    st.subheader("Report e Analisi")
+    st.subheader("Report e Analisi Ordini")
+    
     with get_connection() as conn:
         df_rep = pd.read_sql("""
             SELECT stato, COUNT(*) as conteggio, COALESCE(SUM(prezzo_totale), 0) as totale_euro
@@ -824,16 +913,45 @@ with tab_rep:
             GROUP BY stato
         """, conn)
 
-    if df_rep.empty:
-        st.info("Nessun dato disponibile per i report.")
-    else:
-        col_r1, col_r2 = st.columns(2)
-        with col_r1:
-            st.markdown("#### Preventivi per Stato")
+        df_completati = pd.read_sql("""
+            SELECT p.id as preventivo_id, a.ragione_sociale, p.prezzo_totale, p.data_creazione,
+                   COALESCE(SUM(ol.ore), 0) as totale_ore
+            FROM public.preventivi p
+            JOIN public.aziende a ON p.azienda_id = a.id
+            LEFT JOIN public.ore_lavorate ol ON p.id = ol.preventivo_id
+            WHERE p.stato = 'Completato'
+            GROUP BY p.id, a.ragione_sociale, p.prezzo_totale, p.data_creazione
+            ORDER BY p.id DESC
+        """, conn)
+
+    col_r1, col_r2 = st.columns(2)
+    with col_r1:
+        st.markdown("#### Riepilogo Preventivi per Stato")
+        if not df_rep.empty:
             st.dataframe(df_rep, use_container_width=True)
-        with col_r2:
-            st.markdown("#### Totale Euro per Stato")
+        else:
+            st.info("Nessun dato disponibile.")
+
+    with col_r2:
+        st.markdown("#### Totale Euro per Stato")
+        if not df_rep.empty:
             st.bar_chart(df_rep.set_index('stato')['totale_euro'])
+
+    st.markdown("---")
+    st.markdown("### 🏆 Lista Ordini Completati")
+    if df_completati.empty:
+        st.info("Nessun ordine risulta attualmente completato.")
+    else:
+        st.dataframe(
+            df_completati.rename(columns={
+                "preventivo_id": "ID Ordine",
+                "ragione_sociale": "Cliente",
+                "prezzo_totale": "Valore (€)",
+                "data_creazione": "Data Creazione",
+                "totale_ore": "Ore Effettuate (h)"
+            }),
+            use_container_width=True
+        )
 
 # ---------------------------------------------------------
 # 8. ASSISTENTE AI
