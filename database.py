@@ -31,7 +31,8 @@ def get_connection():
 
 def init_db():
     """
-    Crea la struttura delle tabelle se non esiste e applica le migrazioni necessarie.
+    Crea la struttura delle tabelle se non esiste e applica le migrazioni necessarie
+    per evitare vincoli NOT NULL bloccanti su campi opzionali.
     """
     with get_connection() as conn:
         with conn.cursor() as cur:
@@ -78,7 +79,7 @@ def init_db():
                 );
             """)
 
-            # MIGRAZIONE PRODOTTI: Rimuove eventuali vincoli NOT NULL rigidi su colonne opzionali
+            # MIGRAZIONE PRODOTTI: Rimuove eventuali vincoli NOT NULL su colonne opzionali
             cur.execute("""
                 ALTER TABLE prodotti ALTER COLUMN macchina_gruppo_formato DROP NOT NULL;
                 ALTER TABLE prodotti ALTER COLUMN disegno DROP NOT NULL;
