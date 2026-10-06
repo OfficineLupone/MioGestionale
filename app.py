@@ -14,28 +14,17 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Inizializzazione Database
+# Inizializzazione Database e Migrazioni Schema
 try:
     init_db()
 except Exception as e:
-    st.error(f"Errore di connessione al database: {e}")
+    st.error(f"Errore nell'inizializzazione del database: {e}")
 
-# Styling Enterprise Avanzato
+# Styling Personalizzato
 st.markdown("""
 <style>
-    /* Stile globale */
-    .stApp {
-        background-color: #f8f9fa;
-    }
-    
-    /* Titoli e Header */
-    h1, h2, h3 {
-        color: #1a252f;
-        font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-        font-weight: 600;
-    }
-    
-    /* Metrics Cards */
+    .stApp { background-color: #f8f9fa; }
+    h1, h2, h3 { color: #1a252f; font-weight: 600; }
     div[data-testid="stMetric"] {
         background-color: #ffffff;
         border: 1px solid #e9ecef;
@@ -43,85 +32,49 @@ st.markdown("""
         border-radius: 12px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.03);
     }
-    div[data-testid="stMetric"] label {
-        color: #6c757d !important;
-        font-weight: 500;
-    }
-
-    /* Tab Layout */
+    div[data-testid="stMetric"] label { color: #6c757d !important; font-weight: 500; }
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background-color: #ffffff;
-        padding: 8px;
-        border-radius: 10px;
-        border: 1px solid #e9ecef;
+        gap: 8px; background-color: #ffffff; padding: 8px; border-radius: 10px; border: 1px solid #e9ecef;
     }
-    .stTabs [data-baseweb="tab"] {
-        height: 45px;
-        border-radius: 8px;
-        font-weight: 500;
-        color: #495057;
-    }
-    .stTabs [aria-selected="true"] {
-        background-color: #0d6efd !important;
-        color: #ffffff !important;
-    }
-
-    /* Container e Box Form */
-    .css-card {
-        background-color: #ffffff;
-        border-radius: 12px;
-        padding: 20px;
-        border: 1px solid #e9ecef;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.02);
-        margin-bottom: 20px;
-    }
-
-    /* Buttons */
-    .stButton>button {
-        border-radius: 8px;
-        font-weight: 500;
-        border: none;
-        transition: all 0.2s ease;
-    }
+    .stTabs [data-baseweb="tab"] { height: 45px; border-radius: 8px; font-weight: 500; color: #495057; }
+    .stTabs [aria-selected="true"] { background-color: #0d6efd !important; color: #ffffff !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# Helper Generazione PDF
+# Generator PDF senza problemi di Encoding/Euro
 def genera_pdf_preventivo(id_preventivo, ragione_sociale, data, articoli, totale):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", 'B', 18)
-    pdf.cell(0, 10, f"PREVENTIVO N° #{id_preventivo}", ln=True, align='C')
+    pdf.cell(0, 10, f"PREVENTIVO N. #{id_preventivo}", ln=True, align='C')
     pdf.set_font("Helvetica", size=10)
     pdf.cell(0, 10, f"Data: {data} | Cliente: {ragione_sociale}", ln=True, align='C')
     pdf.ln(10)
 
-    # Header Tabella
     pdf.set_font("Helvetica", 'B', 10)
     pdf.cell(80, 8, "Prodotto", border=1)
     pdf.cell(30, 8, "Quantita", border=1, align='C')
-    pdf.cell(40, 8, "Prezzo Unit.", border=1, align='R')
-    pdf.cell(40, 8, "Prezzo Tot.", border=1, align='R')
+    pdf.cell(40, 8, "Prezzo Unit. (EUR)", border=1, align='R')
+    pdf.cell(40, 8, "Prezzo Tot. (EUR)", border=1, align='R')
     pdf.ln()
 
-    # Corpo
     pdf.set_font("Helvetica", size=10)
     for art in articoli:
-        pdf.cell(80, 8, str(art['prodotto']), border=1)
+        pdf.cell(80, 8, str(art['prodotto'])[:35], border=1)
         pdf.cell(30, 8, str(art['quantita']), border=1, align='C')
-        pdf.cell(40, 8, f"{art['prezzo_unitario']:.2f} €", border=1, align='R')
-        pdf.cell(40, 8, f"{art['prezzo_totale']:.2f} €", border=1, align='R')
+        pdf.cell(40, 8, f"{art['prezzo_unitario']:.2f} EUR", border=1, align='R')
+        pdf.cell(40, 8, f"{art['prezzo_totale']:.2f} EUR", border=1, align='R')
         pdf.ln()
 
     pdf.ln(5)
     pdf.set_font("Helvetica", 'B', 12)
     pdf.cell(150, 10, "TOTALE PREVENTIVO:", align='R')
-    pdf.cell(40, 10, f"{totale:.2f} €", align='R')
+    pdf.cell(40, 10, f"{totale:.2f} EUR", align='R')
     
-    return bytes(pdf.output())
+    output_str = pdf.output(dest='S')
+    return output_str.encode('latin1') if isinstance(output_str, str) else bytes(output_str)
 
-# Client AI Gemini
+# Inizializzazione Client Gemini
 @st.cache_resource
 def get_gemini_client():
     api_key = st.secrets.get("GEMINI_API_KEY")
@@ -129,19 +82,12 @@ def get_gemini_client():
 
 client = get_gemini_client()
 
-# Header Principale
 st.title("🏢 Gestione Aziendale Enterprise")
 
-# Navigazione Principale
 tab_dash, tab_aziende, tab_settori_op, tab_prodotti, tab_prev, tab_lav, tab_rep, tab_ai = st.tabs([
-    "📊 Dashboard", 
-    "🏢 Aziende", 
-    "⚙️ Settori e Operatori",
-    "📦 Prodotti", 
-    "📄 Preventivi",
-    "🛠️ Lavorazione",
-    "📈 Report",
-    "🤖 Assistente AI"
+    "📊 Dashboard", "🏢 Aziende", "⚙️️ Settori e Operatori",
+    "📦 Prodotti", "📄 Preventivi", "🛠️ Lavorazione",
+    "📈 Report", "🤖 Assistente AI"
 ])
 
 # ---------------------------------------------------------
@@ -153,14 +99,17 @@ with tab_dash:
     with get_connection() as conn:
         prodotti_count = pd.read_sql("SELECT COUNT(*) FROM prodotti", conn).iloc[0, 0]
         prev_accettati = pd.read_sql("SELECT COUNT(*), COALESCE(SUM(prezzo_totale), 0) FROM preventivi WHERE stato = 'In lavorazione' OR stato = 'Completato'", conn)
-        prod_lavorazione = pd.read_sql("SELECT COUNT(*) FROM preventivi WHERE stato = 'In lavorazione'", conn).iloc[0,0]
+        prod_lavorazione = pd.read_sql("SELECT COUNT(*) FROM preventivi WHERE stato = 'In lavorazione'", conn).iloc[0, 0]
         
-        # Incassi mese corrente
-        incassi_mese = pd.read_sql("""
-            SELECT COALESCE(SUM(prezzo_totale), 0) FROM preventivi 
-            WHERE (stato = 'In lavorazione' OR stato = 'Completato') 
-            AND DATE_TRUNC('month', data_creazione) = DATE_TRUNC('month', CURRENT_DATE)
-        """, conn).iloc[0,0]
+        # Gestione sicura per incassi del mese corrente
+        try:
+            incassi_mese = pd.read_sql("""
+                SELECT COALESCE(SUM(prezzo_totale), 0) FROM preventivi 
+                WHERE (stato = 'In lavorazione' OR stato = 'Completato') 
+                AND DATE_TRUNC('month', data_creazione) = DATE_TRUNC('month', CURRENT_DATE)
+            """, conn).iloc[0, 0]
+        except Exception:
+            incassi_mese = 0.0
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Prodotti a Catalogo", prodotti_count)
@@ -183,22 +132,24 @@ with tab_dash:
     with col_chart2:
         st.subheader("Andamento Vendite Mensili")
         with get_connection() as conn:
-            df_vendite = pd.read_sql("""
-                SELECT TO_CHAR(data_creazione, 'YYYY-MM') as mese, SUM(prezzo_totale) as totale
-                FROM preventivi WHERE stato != 'Rifiutato'
-                GROUP BY mese ORDER BY mese DESC LIMIT 6
-            """, conn)
-        if not df_vendite.empty:
-            st.line_chart(df_vendite.set_index("mese"))
-        else:
-            st.info("Dati vendite insufficienti.")
+            try:
+                df_vendite = pd.read_sql("""
+                    SELECT TO_CHAR(data_creazione, 'YYYY-MM') as mese, SUM(prezzo_totale) as totale
+                    FROM preventivi WHERE stato != 'Rifiutato'
+                    GROUP BY mese ORDER BY mese DESC LIMIT 6
+                """, conn)
+                if not df_vendite.empty:
+                    st.line_chart(df_vendite.set_index("mese"))
+                else:
+                    st.info("Dati vendite insufficienti.")
+            except Exception:
+                st.info("Dati storico vendite non ancora disponibili.")
 
 # ---------------------------------------------------------
 # 2. AZIENDE
 # ---------------------------------------------------------
 with tab_aziende:
     st.header("🏢 Anagrafica Aziende")
-    
     st_a1, st_a2 = st.tabs(["Aggiungi / Cerca Azienda", "Gestione ed Eliminazione"])
     
     with st_a1:
@@ -208,33 +159,32 @@ with tab_aziende:
             rs = col_a1.text_input("Ragione Sociale *")
             piva = col_a2.text_input("Partita IVA")
             email = col_a3.text_input("Email")
-            
             tel = col_a1.text_input("Telefono")
             sdi = col_a2.text_input("Codice SDI")
             referente = col_a3.text_input("Referente Aziendale")
             
-            sub_a = st.form_submit_button("Salva Azienda")
-            if sub_a and rs:
-                try:
-                    with get_connection() as conn:
-                        with conn.cursor() as cur:
-                            cur.execute("""
-                                INSERT INTO aziende (ragione_sociale, piva, email, telefono, codice_sdi, referente)
-                                VALUES (%s, %s, %s, %s, %s, %s)
-                            """, (rs, piva, email, tel, sdi, referente))
-                            conn.commit()
-                    st.success(f"Azienda '{rs}' aggiunta!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Errore durante l'inserimento: {e}")
+            if st.form_submit_button("Salva Azienda") and rs:
+                with get_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO aziende (ragione_sociale, piva, email, telefono, codice_sdi, referente)
+                            VALUES (%s, %s, %s, %s, %s, %s)
+                        """, (rs, piva, email, tel, sdi, referente))
+                        conn.commit()
+                st.success(f"Azienda '{rs}' aggiunta!")
+                st.rerun()
 
         st.markdown("### 🔍 Cerca Azienda")
         search_az = st.text_input("Filtra per Ragione Sociale, P.IVA o Referente", key="search_az")
         with get_connection() as conn:
-            query = "SELECT * FROM aziende"
             if search_az:
-                query += f" WHERE ragione_sociale ILIKE '%{search_az}%' OR piva ILIKE '%{search_az}%' OR referente ILIKE '%{search_az}%'"
-            df_az = pd.read_sql(query, conn)
+                search_term = f"%{search_az}%"
+                df_az = pd.read_sql(
+                    "SELECT * FROM aziende WHERE ragione_sociale ILIKE %s OR piva ILIKE %s OR referente ILIKE %s",
+                    conn, params=(search_term, search_term, search_term)
+                )
+            else:
+                df_az = pd.read_sql("SELECT * FROM aziende", conn)
         st.dataframe(df_az, use_container_width=True)
 
     with st_a2:
@@ -258,10 +208,7 @@ with tab_aziende:
                 e_ref = st.text_input("Referente", value=az_curr["referente"] or "")
                 
                 c_btn1, c_btn2 = st.columns(2)
-                update_btn = c_btn1.form_submit_button("💾 Salva Modifiche")
-                delete_btn = c_btn2.form_submit_button("🗑️ Elimina Azienda")
-
-                if update_btn:
+                if c_btn1.form_submit_button("💾 Salva Modifiche"):
                     with get_connection() as conn:
                         with conn.cursor() as cur:
                             cur.execute("""
@@ -272,7 +219,7 @@ with tab_aziende:
                     st.success("Azienda aggiornata!")
                     st.rerun()
 
-                if delete_btn:
+                if c_btn2.form_submit_button("🗑️ Elimina Azienda"):
                     with get_connection() as conn:
                         with conn.cursor() as cur:
                             cur.execute("DELETE FROM aziende WHERE id=%s", (int(az_id),))
@@ -285,24 +232,19 @@ with tab_aziende:
 # ---------------------------------------------------------
 with tab_settori_op:
     st.header("⚙️ Gestione Settori e Operatori")
-    
     col_set, col_op = st.columns(2)
     
     with col_set:
         st.subheader("📁 Settori di Produzione")
         with st.form("add_settore_form", clear_on_submit=True):
             nome_settore = st.text_input("Nome Settore")
-            sub_s = st.form_submit_button("Aggiungi Settore")
-            if sub_s and nome_settore:
-                try:
-                    with get_connection() as conn:
-                        with conn.cursor() as cur:
-                            cur.execute("INSERT INTO settori (nome) VALUES (%s)", (nome_settore,))
-                            conn.commit()
-                    st.success("Settore creato!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Errore: {e}")
+            if st.form_submit_button("Aggiungi Settore") and nome_settore:
+                with get_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("INSERT INTO settori (nome) VALUES (%s)", (nome_settore,))
+                        conn.commit()
+                st.success("Settore creato!")
+                st.rerun()
 
         with get_connection() as conn:
             df_settori = pd.read_sql("SELECT * FROM settori ORDER BY nome", conn)
@@ -326,9 +268,8 @@ with tab_settori_op:
         with st.form("add_op_form", clear_on_submit=True):
             nome_op = st.text_input("Nome Operatore")
             settore_id_op = st.selectbox("Abbina a Settore", settori_opts["nome"].tolist() if not settori_opts.empty else [])
-            sub_op = st.form_submit_button("Aggiungi Operatore")
             
-            if sub_op and nome_op and settore_id_op:
+            if st.form_submit_button("Aggiungi Operatore") and nome_op and settore_id_op:
                 s_id = settori_opts[settori_opts["nome"] == settore_id_op]["id"].values[0]
                 with get_connection() as conn:
                     with conn.cursor() as cur:
@@ -340,8 +281,7 @@ with tab_settori_op:
         with get_connection() as conn:
             df_op = pd.read_sql("""
                 SELECT o.id, o.nome as operatore, s.nome as settore 
-                FROM operatori o 
-                LEFT JOIN settori s ON o.settore_id = s.id
+                FROM operatori o LEFT JOIN settori s ON o.settore_id = s.id
             """, conn)
         st.dataframe(df_op, use_container_width=True)
 
@@ -350,7 +290,6 @@ with tab_settori_op:
 # ---------------------------------------------------------
 with tab_prodotti:
     st.header("📦 Gestione Prodotti")
-    
     p_tab1, p_tab2 = st.tabs(["Aggiungi Prodotto", "Ricerca e Modifica"])
     
     with p_tab1:
@@ -373,57 +312,49 @@ with tab_prodotti:
                     with cols_s[i % 4]:
                         ore_settori[row['id']] = st.number_input(f"Ore: {row['nome']}", min_value=0.0, step=0.5, value=0.0)
 
-            ore_totali_calc = sum(ore_settori.values())
-            st.info(f"⏱️ **Ore Lavorazione Totali Calcolate:** {ore_totali_calc:.2f} ore")
-
-            st.markdown("#### Costi e Margini")
             col_c1, col_c2 = st.columns(2)
             costo_int = col_c1.number_input("Costo Interno (€)", min_value=0.0, step=1.0)
             prezzo_ven = col_c2.number_input("Prezzo di Vendita (€)", min_value=0.0, step=1.0)
-            
-            margine_perc = ((prezzo_ven - costo_int) / prezzo_ven * 100) if prezzo_ven > 0 else 0.0
-            st.write(f"📊 **Margine Stimato:** `{margine_perc:.2f}%`")
 
-            sub_p = st.form_submit_button("Salva Prodotto")
-            if sub_p and p_nome:
-                try:
-                    with get_connection() as conn:
-                        with conn.cursor() as cur:
-                            cur.execute("""
-                                INSERT INTO prodotti (nome, macchina_gruppo_formato, disegno, materiale_trattamento, costo_interno, prezzo_vendita)
-                                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
-                            """, (p_nome, p_formato, p_disegno, p_mat, costo_int, prezzo_ven))
-                            new_prod_id = cur.fetchone()[0]
+            if st.form_submit_button("Salva Prodotto") and p_nome:
+                with get_connection() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("""
+                            INSERT INTO prodotti (nome, macchina_gruppo_formato, disegno, materiale_trattamento, costo_interno, prezzo_vendita)
+                            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+                        """, (p_nome, p_formato, p_disegno, p_mat, costo_int, prezzo_ven))
+                        new_prod_id = cur.fetchone()[0]
 
-                            for s_id, ore_v in ore_settori.items():
-                                if ore_v > 0:
-                                    cur.execute("""
-                                        INSERT INTO prodotto_ore_settori (prodotto_id, settore_id, ore)
-                                        VALUES (%s, %s, %s)
-                                    """, (new_prod_id, s_id, ore_v))
-                            conn.commit()
-                    st.success(f"Prodotto '{p_nome}' salvato con successo!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Errore durante il salvataggio: {e}")
+                        for s_id, ore_v in ore_settori.items():
+                            if ore_v > 0:
+                                cur.execute("""
+                                    INSERT INTO prodotto_ore_settori (prodotto_id, settore_id, ore)
+                                    VALUES (%s, %s, %s)
+                                """, (new_prod_id, s_id, ore_v))
+                        conn.commit()
+                st.success(f"Prodotto '{p_nome}' salvato con successo!")
+                st.rerun()
 
     with p_tab2:
         st.subheader("🔍 Cerca e Gestisci Prodotti")
         s_prod = st.text_input("Filtra per ID, Nome, Formato o Disegno", key="s_prod")
         
         with get_connection() as conn:
-            q_p = "SELECT id, nome, macchina_gruppo_formato, disegno, materiale_trattamento, costo_interno, prezzo_vendita FROM prodotti"
             if s_prod:
-                q_p += f" WHERE nome ILIKE '%{s_prod}%' OR macchina_gruppo_formato ILIKE '%{s_prod}%' OR disegno ILIKE '%{s_prod}%'"
-            df_p = pd.read_sql(q_p, conn)
+                search_p_term = f"%{s_prod}%"
+                df_p = pd.read_sql(
+                    "SELECT id, nome, macchina_gruppo_formato, disegno, materiale_trattamento, costo_interno, prezzo_vendita FROM prodotti WHERE nome ILIKE %s OR macchina_gruppo_formato ILIKE %s OR disegno ILIKE %s",
+                    conn, params=(search_p_term, search_p_term, search_p_term)
+                )
+            else:
+                df_p = pd.read_sql("SELECT id, nome, macchina_gruppo_formato, disegno, materiale_trattamento, costo_interno, prezzo_vendita FROM prodotti", conn)
             
-            # Aggiungi colonna calcolata Margine
             df_p["margine_%"] = df_p.apply(lambda r: round(((r["prezzo_vendita"] - r["costo_interno"]) / r["prezzo_vendita"] * 100), 2) if r["prezzo_vendita"] > 0 else 0.0, axis=1)
 
         st.dataframe(df_p, use_container_width=True)
 
         if not df_p.empty:
-            del_p_id = st.selectbox("Seleziona Prodotto da Elimina", df_p["id"].tolist())
+            del_p_id = st.selectbox("Seleziona Prodotto da Eliminare", df_p["id"].tolist())
             if st.button("🗑️ Elimina Prodotto"):
                 with get_connection() as conn:
                     with conn.cursor() as cur:
@@ -437,7 +368,6 @@ with tab_prodotti:
 # ---------------------------------------------------------
 with tab_prev:
     st.header("📄 Gestione Preventivi")
-    
     pr_tab1, pr_tab2 = st.tabs(["Crea Preventivo", "Lista e Generazione PDF"])
     
     with pr_tab1:
@@ -446,20 +376,17 @@ with tab_prev:
             prod_options = pd.read_sql("SELECT id, nome, prezzo_vendita FROM prodotti", conn)
 
         if az_options.empty or prod_options.empty:
-            st.warning("Assicurati di aver inserito almeno un'Azienda e un Prodotto prima di creare un preventivo.")
+            st.warning("Inserisci almeno un'Azienda e un Prodotto prima di creare un preventivo.")
         else:
             selected_az = st.selectbox("Seleziona Cliente", az_options["ragione_sociale"].tolist())
             az_id_val = az_options[az_options["ragione_sociale"] == selected_az]["id"].values[0]
 
-            st.markdown("#### Selezione Articoli")
-            
             if "cart_preventivo" not in st.session_state:
                 st.session_state.cart_preventivo = []
 
             c_p1, c_p2, c_p3 = st.columns([3, 1, 1])
             p_sel = c_p1.selectbox("Prodotto", prod_options["nome"].tolist())
             q_sel = c_p2.number_input("Quantità", min_value=1, value=1)
-            
             p_data = prod_options[prod_options["nome"] == p_sel].iloc[0]
             
             if c_p3.button("➕ Aggiungi"):
@@ -474,7 +401,6 @@ with tab_prev:
             if st.session_state.cart_preventivo:
                 df_cart = pd.DataFrame(st.session_state.cart_preventivo)
                 st.table(df_cart[["prodotto", "quantita", "prezzo_unitario", "prezzo_totale"]])
-                
                 totale_prev = df_cart["prezzo_totale"].sum()
                 st.markdown(f"### Totale Preventivo: `{totale_prev:,.2f} €`")
 
@@ -483,8 +409,8 @@ with tab_prev:
                     with get_connection() as conn:
                         with conn.cursor() as cur:
                             cur.execute("""
-                                INSERT INTO preventivi (azienda_id, prezzo_totale, stato)
-                                VALUES (%s, %s, 'In attesa') RETURNING id
+                                INSERT INTO preventivi (azienda_id, prezzo_totale, stato, data_creazione)
+                                VALUES (%s, %s, 'In attesa', CURRENT_TIMESTAMP) RETURNING id
                             """, (int(az_id_val), totale_prev))
                             new_prev_id = cur.fetchone()[0]
 
@@ -507,16 +433,13 @@ with tab_prev:
         with get_connection() as conn:
             df_prev_all = pd.read_sql("""
                 SELECT p.id, a.ragione_sociale, p.prezzo_totale, p.stato, p.data_creazione
-                FROM preventivi p
-                LEFT JOIN aziende a ON p.azienda_id = a.id
+                FROM preventivi p LEFT JOIN aziende a ON p.azienda_id = a.id
                 ORDER BY p.id DESC
             """, conn)
         st.dataframe(df_prev_all, use_container_width=True)
 
         if not df_prev_all.empty:
-            st.markdown("### Azioni Preventivo")
             c_action1, c_action2 = st.columns(2)
-            
             p_action_id = c_action1.selectbox("Seleziona ID Preventivo", df_prev_all["id"].tolist())
             nuovo_stato = c_action2.selectbox("Aggiorna Stato", ["In attesa", "In lavorazione", "Completato", "Rifiutato"])
 
@@ -525,10 +448,9 @@ with tab_prev:
                     with conn.cursor() as cur:
                         cur.execute("UPDATE preventivi SET stato = %s WHERE id = %s", (nuovo_stato, int(p_action_id)))
                         conn.commit()
-                st.success(f"Preventivo #{p_action_id} aggiornato a '{nuovo_stato}'!")
+                st.success(f"Preventivo #{p_action_id} aggiornato!")
                 st.rerun()
 
-            # Download PDF
             with get_connection() as conn:
                 prev_info = pd.read_sql("""
                     SELECT p.id, a.ragione_sociale, p.data_creazione, p.prezzo_totale
@@ -540,9 +462,10 @@ with tab_prev:
                     FROM preventivo_dettagli d LEFT JOIN prodotti pr ON d.prodotto_id = pr.id WHERE d.preventivo_id = %s
                 """, conn, params=(int(p_action_id),)).to_dict('records')
 
+            data_str = str(prev_info["data_creazione"])[:10] if prev_info["data_creazione"] else datetime.today().strftime('%Y-%m-%d')
             pdf_bytes = genera_pdf_preventivo(
                 prev_info["id"], prev_info["ragione_sociale"], 
-                str(prev_info["data_creazione"])[:10], items_info, float(prev_info["prezzo_totale"])
+                data_str, items_info, float(prev_info["prezzo_totale"])
             )
 
             st.download_button(
@@ -557,34 +480,30 @@ with tab_prev:
 # ---------------------------------------------------------
 with tab_lav:
     st.header("🛠️ Ordini in Lavorazione")
-    
     with get_connection() as conn:
         df_in_lav = pd.read_sql("""
             SELECT p.id, a.ragione_sociale, p.prezzo_totale, p.data_creazione
-            FROM preventivi p
-            LEFT JOIN aziende a ON p.azienda_id = a.id
+            FROM preventivi p LEFT JOIN aziende a ON p.azienda_id = a.id
             WHERE p.stato = 'In lavorazione'
         """, conn)
 
     if df_in_lav.empty:
-        st.info("Nessun ordine attualmente in lavorazione.")
+        st.info("Nessun ordine in lavorazione.")
     else:
-        sel_lav_id = st.selectbox("Seleziona Ordine in Lavorazione", df_in_lav["id"].tolist())
+        sel_lav_id = st.selectbox("Seleziona Ordine", df_in_lav["id"].tolist())
         
         with get_connection() as conn:
             op_list = pd.read_sql("SELECT id, nome FROM operatori", conn)
             sec_list = pd.read_sql("SELECT id, nome FROM settori", conn)
 
-        st.subheader(f"Registrazione Ore Effettive per Ordine #{sel_lav_id}")
-        
         with st.form("form_registra_ore"):
             col_l1, col_l2, col_l3 = st.columns(3)
             sec_id = col_l1.selectbox("Settore", sec_list["nome"].tolist() if not sec_list.empty else [])
             op_id = col_l2.selectbox("Operatore", op_list["nome"].tolist() if not op_list.empty else [])
             ore_eff = col_l3.number_input("Ore Effettive Impiegate", min_value=0.5, step=0.5)
-            note_lav = st.text_input("Note sulle lavorazioni")
+            note_lav = st.text_input("Note")
             
-            if st.form_submit_button("💾 Registra Ore"):
+            if st.form_submit_button("💾 Registra Ore") and not sec_list.empty and not op_list.empty:
                 sec_val = sec_list[sec_list["nome"] == sec_id]["id"].values[0]
                 op_val = op_list[op_list["nome"] == op_id]["id"].values[0]
                 
@@ -598,7 +517,6 @@ with tab_lav:
                 st.success("Ore registrate!")
                 st.rerun()
 
-        st.markdown("#### Storico Registrazione Ore")
         with get_connection() as conn:
             df_hist = pd.read_sql("""
                 SELECT l.id, s.nome as settore, o.nome as operatore, l.ore_effettive, l.note, l.data_registrazione
@@ -622,26 +540,26 @@ with tab_lav:
 # ---------------------------------------------------------
 with tab_rep:
     st.header("📈 Reportistica e Analytics")
-    
     col_r1, col_r2 = st.columns(2)
     d_inizio = col_r1.date_input("Data Inizio", value=datetime(2025, 1, 1))
     d_fine = col_r2.date_input("Data Fine", value=datetime.today())
 
     with get_connection() as conn:
-        query_rep = """
-            SELECT p.id, a.ragione_sociale, p.prezzo_totale, p.stato, p.data_creazione
-            FROM preventivi p
-            LEFT JOIN aziende a ON p.azienda_id = a.id
-            WHERE p.data_creazione BETWEEN %s AND %s
-        """
-        df_rep = pd.read_sql(query_rep, conn, params=(d_inizio, d_fine))
+        try:
+            query_rep = """
+                SELECT p.id, a.ragione_sociale, p.prezzo_totale, p.stato, p.data_creazione
+                FROM preventivi p LEFT JOIN aziende a ON p.azienda_id = a.id
+                WHERE p.data_creazione BETWEEN %s AND %s
+            """
+            df_rep = pd.read_sql(query_rep, conn, params=(d_inizio, d_fine))
+        except Exception:
+            df_rep = pd.DataFrame(columns=["id", "ragione_sociale", "prezzo_totale", "stato", "data_creazione"])
 
     st.subheader("Riepilogo Periodo Selezionato")
     r_c1, r_c2, r_c3 = st.columns(3)
     r_c1.metric("Preventivi Generati", len(df_rep))
-    r_c2.metric("Valore Totale", f"{df_rep['prezzo_totale'].sum():,.2f} €")
+    r_c2.metric("Valore Totale", f"{df_rep['prezzo_totale'].sum():,.2f} €" if not df_rep.empty else "0.00 €")
     r_c3.metric("Tasso di Conversione Approvati", f"{(len(df_rep[df_rep['stato'].isin(['In lavorazione', 'Completato'])]) / len(df_rep) * 100 if len(df_rep)>0 else 0):.1f}%")
-
     st.dataframe(df_rep, use_container_width=True)
 
 # ---------------------------------------------------------
@@ -665,12 +583,29 @@ with tab_ai:
 
         if client:
             try:
+                with get_connection() as conn:
+                    top_clients = pd.read_sql("""
+                        SELECT a.ragione_sociale, SUM(p.prezzo_totale) as totale
+                        FROM preventivi p JOIN aziende a ON p.azienda_id = a.id
+                        WHERE p.stato IN ('In lavorazione', 'Completato')
+                        GROUP BY a.ragione_sociale ORDER BY totale DESC LIMIT 5
+                    """, conn).to_string()
+                    
+                    top_prod = pd.read_sql("SELECT nome, prezzo_vendita FROM prodotti LIMIT 5", conn).to_string()
+
+                system_prompt = f"""
+                Sei l'assistente ERP dell'azienda. Rispondi in italiano con precisione.
+                Contesto attuale del DB:
+                TOP CLIENTE:
+                {top_clients}
+                PRODOTTI PRINCIPALI:
+                {top_prod}
+                """
+
                 response = client.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction="Sei l'assistente ERP dell'azienda. Fornisci risposte professionali e sintetiche."
-                    )
+                    config=types.GenerateContentConfig(system_instruction=system_prompt)
                 )
                 with st.chat_message("assistant"):
                     st.markdown(response.text)
