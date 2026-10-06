@@ -8,7 +8,7 @@ from database import init_db, get_connection
 
 # Configurazione Pagina
 st.set_page_config(
-    page_title="Enterprise ERP System",
+    page_title="Lupone Enterprise",
     page_icon="🏢",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -41,7 +41,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Generatore PDF senza problemi di Encoding/Euro
+# Generatore PDF
 def genera_pdf_preventivo(id_preventivo, ragione_sociale, data, articoli, totale):
     pdf = FPDF()
     pdf.add_page()
@@ -240,7 +240,7 @@ with tab_aziende:
 # 3. SETTORI E OPERATORI
 # ---------------------------------------------------------
 with tab_settori_op:
-    st.header("⚙️️ Gestione Settori e Operatori")
+    st.header("⚙ Gestione Settori e Operatori")
     col_set, col_op = st.columns(2)
     
     with col_set:
@@ -329,7 +329,6 @@ with tab_prodotti:
                 if not p_nome or not p_nome.strip():
                     st.error("Il Nome del Prodotto è obbligatorio.")
                 else:
-                    # Sanificazione completa degli input per evitare valori NULL in DB
                     val_nome = p_nome.strip()
                     val_formato = p_formato.strip() if p_formato else ""
                     val_disegno = p_disegno.strip() if p_disegno else ""
