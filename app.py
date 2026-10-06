@@ -85,7 +85,7 @@ st.markdown("""
         transition: all 0.2s ease;
     }
 </style>
-""", unsafe_allowed_html=True)
+""", unsafe_allow_html=True)
 
 # Helper Generazione PDF
 def genera_pdf_preventivo(id_preventivo, ragione_sociale, data, articoli, totale):
