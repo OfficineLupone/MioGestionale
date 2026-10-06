@@ -9,35 +9,171 @@ from database import init_db, get_connection
 # Configurazione Pagina
 st.set_page_config(
     page_title="Enterprise ERP System",
-    page_icon="🏢",
+    page_icon="🟢",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Inizializzazione Database e Migrazioni Schema
+# Inizializzazione Database
 try:
     init_db()
 except Exception as e:
     st.error(f"Errore nell'inizializzazione del database: {e}")
 
-# Styling Personalizzato
+# =========================================================
+# STILE GRAFICO PERSONALIZZATO (LAYOUT ISPIRATO ALLA FOTO)
+# =========================================================
 st.markdown("""
 <style>
-    .stApp { background-color: #f8f9fa; }
-    h1, h2, h3 { color: #1a252f; font-weight: 600; }
-    div[data-testid="stMetric"] {
-        background-color: #ffffff;
-        border: 1px solid #e9ecef;
-        padding: 18px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.03);
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+    /* Sfondo Generale e Font */
+    html, body, [data-testid="stAppViewContainer"] {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
+        background-color: #F8F9FA !important;
+        color: #111827 !important;
     }
-    div[data-testid="stMetric"] label { color: #6c757d !important; font-weight: 500; }
+
+    /* Nasconde elementi superflui */
+    #MainMenu, footer, header { visibility: hidden; }
+
+    /* Titoli ed Intestazioni */
+    h1, h2, h3 {
+        color: #111827 !important;
+        font-weight: 700 !important;
+        letter-spacing: -0.02em !important;
+    }
+
+    /* Top Bar Personalizzata (Header Aziendale) */
+    .brand-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 0px 24px 0px;
+        border-bottom: 1px solid #E5E7EB;
+        margin-bottom: 24px;
+    }
+    .brand-logo-title {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+    .brand-icon {
+        background-color: #0B3C2D;
+        color: white;
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        font-size: 20px;
+    }
+
+    /* Styling delle Tab di Navigazione */
     .stTabs [data-baseweb="tab-list"] {
-        gap: 8px; background-color: #ffffff; padding: 8px; border-radius: 10px; border: 1px solid #e9ecef;
+        background-color: transparent !important;
+        gap: 28px !important;
+        border-bottom: 1px solid #E5E7EB !important;
+        padding-bottom: 0px !important;
     }
-    .stTabs [data-baseweb="tab"] { height: 45px; border-radius: 8px; font-weight: 500; color: #495057; }
-    .stTabs [aria-selected="true"] { background-color: #0d6efd !important; color: #ffffff !important; }
+
+    .stTabs [data-baseweb="tab"] {
+        height: 48px !important;
+        background-color: transparent !important;
+        border: none !important;
+        border-bottom: 3px solid transparent !important;
+        color: #4B5563 !important;
+        font-weight: 500 !important;
+        font-size: 15px !important;
+        padding: 0 4px !important;
+    }
+
+    .stTabs [aria-selected="true"] {
+        color: #0B3C2D !important;
+        font-weight: 700 !important;
+        border-bottom-color: #0B3C2D !important;
+        background-color: transparent !important;
+    }
+
+    /* Styling Cards Metriche */
+    div[data-testid="stMetric"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #E5E7EB !important;
+        border-radius: 12px !important;
+        padding: 20px 24px !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.02) !important;
+    }
+
+    div[data-testid="stMetric"] label {
+        color: #6B7280 !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+
+    div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+        color: #111827 !important;
+        font-size: 32px !important;
+        font-weight: 700 !important;
+    }
+
+    /* Banner di Avviso Stile Foto */
+    .alert-banner {
+        background-color: #FFFDF0;
+        border: 1px solid #FDE68A;
+        border-radius: 10px;
+        padding: 14px 20px;
+        margin: 20px 0px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    .alert-banner-text {
+        color: #92400E;
+        font-size: 14px;
+        font-weight: 600;
+    }
+    .alert-banner-sub {
+        color: #B45309;
+        font-size: 13px;
+    }
+
+    /* Bottoni Stile Verde Bosco */
+    .stButton > button, div[data-testid="stFormSubmitButton"] > button {
+        background-color: #0B3C2D !important;
+        color: #FFFFFF !important;
+        border: 1px solid #0B3C2D !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        padding: 8px 18px !important;
+        transition: all 0.2s ease-in-out;
+    }
+
+    .stButton > button:hover, div[data-testid="stFormSubmitButton"] > button:hover {
+        background-color: #07291F !important;
+        border-color: #07291F !important;
+        color: #FFFFFF !important;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+
+    /* Input Form e Selectbox */
+    .stTextInput input, .stNumberInput input, .stSelectbox [data-baseweb="select"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #D1D5DB !important;
+        border-radius: 8px !important;
+        color: #111827 !important;
+    }
+
+    /* Tabelle */
+    div[data-testid="stDataFrame"] {
+        background-color: #FFFFFF !important;
+        border: 1px solid #E5E7EB !important;
+        border-radius: 12px !important;
+        padding: 6px !important;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -82,19 +218,31 @@ def get_gemini_client():
 
 client = get_gemini_client()
 
-st.title("🏢 Gestione Aziendale Enterprise")
+# Header Superiore Stile foto
+st.markdown("""
+<div class="brand-header">
+    <div class="brand-logo-title">
+        <div class="brand-icon">🟢</div>
+        <div>
+            <div style="font-weight: 700; font-size: 18px; color: #111827;">GESTIONALE ENTERPRISE</div>
+            <div style="font-size: 12px; color: #6B7280;">Piattaforma di Gestione e Controllo Ordini</div>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
+# Navigazione principale a Tab
 tab_dash, tab_aziende, tab_settori_op, tab_prodotti, tab_prev, tab_lav, tab_rep, tab_ai = st.tabs([
-    "📊 Dashboard", "🏢 Aziende", "⚙ Settori e Operatori",
-    "📦 Prodotti", "📄 Preventivi", "🛠️ Lavorazione",
-    "📈 Report", "🤖 Assistente AI"
+    "Panoramica", "Aziende", "Settori & Operatori",
+    "Prodotti", "Preventivi", "Lavorazione",
+    "Report", "Assistente AI"
 ])
 
 # ---------------------------------------------------------
-# 1. DASHBOARD
+# 1. PANORAMICA (DASHBOARD)
 # ---------------------------------------------------------
 with tab_dash:
-    st.header("📊 Panoramica Generale")
+    st.subheader("Panoramica")
     
     with get_connection() as conn:
         prodotti_count = pd.read_sql("SELECT COUNT(*) FROM public.prodotti", conn).iloc[0, 0]
@@ -111,16 +259,25 @@ with tab_dash:
             incassi_mese = 0.0
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Prodotti a Catalogo", prodotti_count)
+    c1.metric("Prodotti a Catalogo", prodotti_count, help="Totale prodotti nel database")
     c2.metric("Preventivi Approvati", prev_accettati.iloc[0, 0], f"{prev_accettati.iloc[0, 1]:,.2f} €")
     c3.metric("Ordini in Lavorazione", prod_lavorazione)
     c4.metric("Incassi Mese Corrente", f"{incassi_mese:,.2f} €")
 
-    st.markdown("---")
+    # Banner Avviso Stile Foto
+    st.markdown(f"""
+    <div class="alert-banner">
+        <div>
+            <span class="alert-banner-text">⚠️ Attenzione: Ci sono {prod_lavorazione} ordini attualmente in lavorazione.</span><br>
+            <span class="alert-banner-sub">Verifica lo stato avanzamento delle lavorazioni e registra le ore nel tab dedicato.</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
     col_chart1, col_chart2 = st.columns(2)
     
     with col_chart1:
-        st.subheader("Stato Preventivi")
+        st.markdown("### Stato Preventivi")
         with get_connection() as conn:
             df_stati = pd.read_sql("SELECT stato, COUNT(*) as totale FROM public.preventivi GROUP BY stato", conn)
         if not df_stati.empty:
@@ -129,7 +286,7 @@ with tab_dash:
             st.info("Nessun preventivo presente.")
 
     with col_chart2:
-        st.subheader("Andamento Vendite Mensili")
+        st.markdown("### Andamento Vendite Mensili")
         with get_connection() as conn:
             try:
                 df_vendite = pd.read_sql("""
@@ -148,12 +305,12 @@ with tab_dash:
 # 2. AZIENDE
 # ---------------------------------------------------------
 with tab_aziende:
-    st.header("🏢 Anagrafica Aziende")
+    st.subheader("Anagrafica Aziende")
     st_a1, st_a2 = st.tabs(["Aggiungi / Cerca Azienda", "Gestione ed Eliminazione"])
     
     with st_a1:
         with st.form("form_azienda", clear_on_submit=True):
-            st.subheader("Nuova Azienda")
+            st.markdown("#### Nuova Azienda")
             col_a1, col_a2, col_a3 = st.columns(3)
             rs = col_a1.text_input("Ragione Sociale *")
             piva = col_a2.text_input("Partita IVA")
@@ -183,7 +340,7 @@ with tab_aziende:
                     st.success(f"Azienda '{rs}' aggiunta!")
                     st.rerun()
 
-        st.markdown("### 🔍 Cerca Azienda")
+        st.markdown("#### 🔍 Cerca Azienda")
         search_az = st.text_input("Filtra per Ragione Sociale, P.IVA o Referente", key="search_az")
         with get_connection() as conn:
             if search_az:
@@ -197,7 +354,7 @@ with tab_aziende:
         st.dataframe(df_az, use_container_width=True)
 
     with st_a2:
-        st.subheader("Modifica o Elimina Azienda")
+        st.markdown("#### Modifica o Elimina Azienda")
         with get_connection() as conn:
             aziende_list = pd.read_sql("SELECT id, ragione_sociale FROM public.aziende ORDER BY ragione_sociale", conn)
         
@@ -240,11 +397,11 @@ with tab_aziende:
 # 3. SETTORI E OPERATORI
 # ---------------------------------------------------------
 with tab_settori_op:
-    st.header("⚙ Gestione Settori e Operatori")
+    st.subheader("Gestione Settori e Operatori")
     col_set, col_op = st.columns(2)
     
     with col_set:
-        st.subheader("📁 Settori di Produzione")
+        st.markdown("#### 📁 Settori di Produzione")
         with st.form("add_settore_form", clear_on_submit=True):
             nome_settore = st.text_input("Nome Settore")
             if st.form_submit_button("Aggiungi Settore") and nome_settore:
@@ -270,7 +427,7 @@ with tab_settori_op:
                 st.rerun()
 
     with col_op:
-        st.subheader("👷 Operatori")
+        st.markdown("#### 👷 Operatori")
         with get_connection() as conn:
             settori_opts = pd.read_sql("SELECT id, nome FROM public.settori", conn)
 
@@ -298,12 +455,12 @@ with tab_settori_op:
 # 4. PRODOTTI
 # ---------------------------------------------------------
 with tab_prodotti:
-    st.header("📦 Gestione Prodotti")
+    st.subheader("Gestione Prodotti")
     p_tab1, p_tab2 = st.tabs(["Aggiungi Prodotto", "Ricerca e Modifica"])
     
     with p_tab1:
         with st.form("form_nuovo_prodotto", clear_on_submit=True):
-            st.subheader("Specifiche Prodotto")
+            st.markdown("#### Specifiche Prodotto")
             col_p1, col_p2 = st.columns(2)
             p_nome = col_p1.text_input("Nome Prodotto *")
             p_formato = col_p2.text_input("Macchina / Gruppo / Formato")
@@ -369,7 +526,7 @@ with tab_prodotti:
                     st.rerun()
 
     with p_tab2:
-        st.subheader("🔍 Cerca e Gestisci Prodotti")
+        st.markdown("#### 🔍 Cerca e Gestisci Prodotti")
         s_prod = st.text_input("Filtra per ID, Nome, Formato o Disegno", key="s_prod")
         
         with get_connection() as conn:
@@ -400,7 +557,7 @@ with tab_prodotti:
 # 5. PREVENTIVI
 # ---------------------------------------------------------
 with tab_prev:
-    st.header("📄 Gestione Preventivi")
+    st.subheader("Gestione Preventivi")
     pr_tab1, pr_tab2 = st.tabs(["Crea Preventivo", "Lista e Generazione PDF"])
     
     with pr_tab1:
@@ -462,7 +619,7 @@ with tab_prev:
                     st.rerun()
 
     with pr_tab2:
-        st.subheader("Elenco e Cambi di Stato")
+        st.markdown("#### Elenco e Cambi di Stato")
         with get_connection() as conn:
             df_prev_all = pd.read_sql("""
                 SELECT p.id, a.ragione_sociale, p.prezzo_totale, p.stato, p.data_creazione
@@ -512,7 +669,7 @@ with tab_prev:
 # 6. LAVORAZIONE
 # ---------------------------------------------------------
 with tab_lav:
-    st.header("🛠️ Ordini in Lavorazione")
+    st.subheader("Ordini in Lavorazione")
     with get_connection() as conn:
         df_in_lav = pd.read_sql("""
             SELECT p.id, a.ragione_sociale, p.prezzo_totale, p.data_creazione
@@ -572,7 +729,7 @@ with tab_lav:
 # 7. REPORT
 # ---------------------------------------------------------
 with tab_rep:
-    st.header("📈 Reportistica e Analytics")
+    st.subheader("Reportistica e Analytics")
     col_r1, col_r2 = st.columns(2)
     d_inizio = col_r1.date_input("Data Inizio", value=datetime(2025, 1, 1))
     d_fine = col_r2.date_input("Data Fine", value=datetime.today())
@@ -588,7 +745,7 @@ with tab_rep:
         except Exception:
             df_rep = pd.DataFrame(columns=["id", "ragione_sociale", "prezzo_totale", "stato", "data_creazione"])
 
-    st.subheader("Riepilogo Periodo Selezionato")
+    st.markdown("#### Riepilogo Periodo Selezionato")
     r_c1, r_c2, r_c3 = st.columns(3)
     r_c1.metric("Preventivi Generati", len(df_rep))
     r_c2.metric("Valore Totale", f"{df_rep['prezzo_totale'].sum():,.2f} €" if not df_rep.empty else "0.00 €")
@@ -599,7 +756,7 @@ with tab_rep:
 # 8. ASSISTENTE AI
 # ---------------------------------------------------------
 with tab_ai:
-    st.header("🤖 Assistente AI aziendale")
+    st.subheader("Assistente AI aziendale")
     st.caption("Interroga il tuo gestionale con domande in linguaggio naturale.")
 
     if "messages" not in st.session_state:
