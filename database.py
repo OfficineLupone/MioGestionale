@@ -78,6 +78,15 @@ def init_db():
                 );
             """)
 
+            # MIGRAZIONE PRODOTTI: Rimuove eventuali vincoli NOT NULL rigidi su colonne opzionali
+            cur.execute("""
+                ALTER TABLE prodotti ALTER COLUMN macchina_gruppo_formato DROP NOT NULL;
+                ALTER TABLE prodotti ALTER COLUMN disegno DROP NOT NULL;
+                ALTER TABLE prodotti ALTER COLUMN materiale_trattamento DROP NOT NULL;
+                ALTER TABLE prodotti ALTER COLUMN costo_interno SET DEFAULT 0.0;
+                ALTER TABLE prodotti ALTER COLUMN prezzo_vendita SET DEFAULT 0.0;
+            """)
+
             # 5. Ore previste per settore su ogni prodotto
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS prodotto_ore_settori (
@@ -99,7 +108,7 @@ def init_db():
                 );
             """)
 
-            # MIGRAZIONE AUTOMATICA: Aggiunge 'data_creazione' se il DB esisteva già senza questa colonna
+            # MIGRAZIONE PREVENTIVI: Aggiunge 'data_creazione' se mancava
             cur.execute("""
                 ALTER TABLE preventivi 
                 ADD COLUMN IF NOT EXISTS data_creazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
