@@ -60,6 +60,23 @@ def load_prodotti():
 # =========================================================
 st.markdown("""
 <style>
+    /* Nasconde l'header superiore di Streamlit (stelle, matita, GitHub) */
+    header[data-testid="stHeader"] {
+        visibility: hidden;
+        height: 0%;
+    }
+    
+    /* Nasconde il footer 'Made with Streamlit' */
+    footer {
+        visibility: hidden;
+    }
+    
+    /* Riduce lo spazio vuoto in alto rimasto dopo aver nascosto l'header */
+    .block-container {
+        padding-top: 1rem !important;
+    }
+</style>
+""", unsafe_allow_html=True)
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
     html, body, [data-testid="stAppViewContainer"] {
