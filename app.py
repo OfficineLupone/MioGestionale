@@ -60,6 +60,8 @@ def load_prodotti():
 # =========================================================
 st.markdown("""
 <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
     /* Nasconde l'header superiore di Streamlit (stelle, matita, GitHub) */
     header[data-testid="stHeader"] {
         visibility: hidden;
@@ -75,9 +77,6 @@ st.markdown("""
     .block-container {
         padding-top: 1rem !important;
     }
-</style>
-""", unsafe_allow_html=True)
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
     html, body, [data-testid="stAppViewContainer"] {
         font-family: 'Inter', system-ui, -apple-system, sans-serif !important;
