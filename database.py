@@ -35,8 +35,8 @@ def get_db_engine() -> Engine:
 
 def init_db():
     """
-    Crea le tabelle nello schema public ed applica le migrazioni automatiche.
-    Viene eseguita solo una volta all'avvio grazie al caching su app.py.
+    Crea le tabelle nello schema public, applica le migrazioni automatiche
+    e crea gli indici per velocizzare le ricerche e i join.
     """
     engine = get_db_engine()
     with engine.begin() as conn:
@@ -154,3 +154,9 @@ def init_db():
                 data_registrazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         """))
+
+        # Indici per ottimizzare la velocità delle query frequenti
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_preventivi_azienda ON public.preventivi(azienda_id);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_preventivi_stato ON public.preventivi(stato);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_prev_dettagli_prev ON public.preventivo_dettagli(preventivo_id);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ore_lavorate_prev ON public.ore_lavorate(preventivo_id);"))
