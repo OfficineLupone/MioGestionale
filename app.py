@@ -4,7 +4,8 @@ from fpdf import FPDF
 from datetime import datetime, date
 from google import genai
 from google.genai import types
-from database import init_db, get_connection
+from sqlalchemy import text
+from database import init_db, get_db_engine
 
 # Configurazione Pagina
 st.set_page_config(
@@ -14,16 +15,18 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Inizializzazione Database e Verifica Schema
-try:
-    init_db()
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("ALTER TABLE public.aziende ADD COLUMN IF NOT EXISTS citta TEXT;")
-            cur.execute("ALTER TABLE public.aziende ADD COLUMN IF NOT EXISTS provincia TEXT;")
-            cur.execute("ALTER TABLE public.aziende ADD COLUMN IF NOT EXISTS cap TEXT;")
+# Inizializzazione Database eseguita UNA SOLA VOLTA all'avvio dell'app
+@st.cache_resource
+def run_db_init():
+    try:
+        init_db()
+        engine = get_db_engine()
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE public.aziende ADD COLUMN IF NOT EXISTS citta TEXT;"))
+            conn.execute(text("ALTER TABLE public.aziende ADD COLUMN IF NOT EXISTS provincia TEXT;"))
+            conn.execute(text("ALTER TABLE public.aziende ADD COLUMN IF NOT EXISTS cap TEXT;"))
             
-            cur.execute("""
+            conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS public.ore_lavorate (
                     id SERIAL PRIMARY KEY,
                     preventivo_id INT REFERENCES public.preventivi(id) ON DELETE CASCADE,
@@ -32,30 +35,31 @@ try:
                     data_lavorazione DATE NOT NULL,
                     ore NUMERIC(10,2) NOT NULL DEFAULT 0.0
                 );
-            """)
-            conn.commit()
-except Exception as e:
-    st.error(f"Errore nell'inizializzazione del database: {e}")
+            """))
+    except Exception as e:
+        st.error(f"Errore nell'inizializzazione del database: {e}")
 
-# Funzioni con cache per velocizzare drasticamente l'app
-@st.cache_data(ttl=30)
+run_db_init()
+
+# Funzioni con cache per velocizzare le letture ricorrenti
+@st.cache_data(ttl=60)
 def load_settori():
-    with get_connection() as conn:
-        return pd.read_sql("SELECT * FROM public.settori ORDER BY nome", conn)
+    engine = get_db_engine()
+    return pd.read_sql("SELECT * FROM public.settori ORDER BY nome", engine)
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=60)
 def load_operatori():
-    with get_connection() as conn:
-        return pd.read_sql("""
-            SELECT o.id, o.nome as operatore, s.nome as settore, o.settore_id
-            FROM public.operatori o LEFT JOIN public.settori s ON o.settore_id = s.id
-            ORDER BY o.nome
-        """, conn)
+    engine = get_db_engine()
+    return pd.read_sql("""
+        SELECT o.id, o.nome as operatore, s.nome as settore, o.settore_id
+        FROM public.operatori o LEFT JOIN public.settori s ON o.settore_id = s.id
+        ORDER BY o.nome
+    """, engine)
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=60)
 def load_aziende():
-    with get_connection() as conn:
-        return pd.read_sql("SELECT * FROM public.aziende ORDER BY ragione_sociale", conn)
+    engine = get_db_engine()
+    return pd.read_sql("SELECT * FROM public.aziende ORDER BY ragione_sociale", engine)
 
 # =========================================================
 # STILE GRAFICO PERSONALIZZATO
@@ -290,23 +294,25 @@ tab_dash, tab_aziende, tab_settori_op, tab_prodotti, tab_prev, tab_lav, tab_rep,
     "Report", "Assistente AI"
 ])
 
+engine = get_db_engine()
+
 # ---------------------------------------------------------
 # 1. PANORAMICA
 # ---------------------------------------------------------
 with tab_dash:
     st.subheader("Panoramica")
-    with get_connection() as conn:
-        prodotti_count = pd.read_sql("SELECT COUNT(*) FROM public.prodotti", conn).iloc[0, 0]
-        prev_accettati = pd.read_sql("SELECT COUNT(*), COALESCE(SUM(prezzo_totale), 0) FROM public.preventivi WHERE stato IN ('In lavorazione', 'Completato')", conn)
-        prod_lavorazione = pd.read_sql("SELECT COUNT(*) FROM public.preventivi WHERE stato = 'In lavorazione'", conn).iloc[0, 0]
-        try:
-            incassi_mese = pd.read_sql("""
-                SELECT COALESCE(SUM(prezzo_totale), 0) FROM public.preventivi 
-                WHERE stato IN ('In lavorazione', 'Completato') 
-                AND DATE_TRUNC('month', data_creazione) = DATE_TRUNC('month', CURRENT_DATE)
-            """, conn).iloc[0, 0]
-        except Exception:
-            incassi_mese = 0.0
+    
+    prodotti_count = pd.read_sql("SELECT COUNT(*) FROM public.prodotti", engine).iloc[0, 0]
+    prev_accettati = pd.read_sql("SELECT COUNT(*), COALESCE(SUM(prezzo_totale), 0) FROM public.preventivi WHERE stato IN ('In lavorazione', 'Completato')", engine)
+    prod_lavorazione = pd.read_sql("SELECT COUNT(*) FROM public.preventivi WHERE stato = 'In lavorazione'", engine).iloc[0, 0]
+    try:
+        incassi_mese = pd.read_sql("""
+            SELECT COALESCE(SUM(prezzo_totale), 0) FROM public.preventivi 
+            WHERE stato IN ('In lavorazione', 'Completato') 
+            AND DATE_TRUNC('month', data_creazione) = DATE_TRUNC('month', CURRENT_DATE)
+        """, engine).iloc[0, 0]
+    except Exception:
+        incassi_mese = 0.0
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Prodotti a Catalogo", prodotti_count)
@@ -356,14 +362,15 @@ with tab_aziende:
                     if not rs or not rs.strip():
                         st.error("La Ragione Sociale è obbligatoria.")
                     else:
-                        with get_connection() as conn:
-                            with conn.cursor() as cur:
-                                cur.execute("""
-                                    INSERT INTO public.aziende (ragione_sociale, piva, email, telefono, codice_sdi, referente, citta, provincia, cap)
-                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                """, (rs.strip(), (piva or "").strip(), (email or "").strip(), (tel or "").strip(), 
-                                      (sdi or "").strip(), (ref or "").strip(), (citta or "").strip(), (provincia or "").strip(), (cap or "").strip()))
-                                conn.commit()
+                        with engine.begin() as conn:
+                            conn.execute(text("""
+                                INSERT INTO public.aziende (ragione_sociale, piva, email, telefono, codice_sdi, referente, citta, provincia, cap)
+                                VALUES (:rs, :piva, :email, :tel, :sdi, :ref, :citta, :prov, :cap)
+                            """), {
+                                "rs": rs.strip(), "piva": (piva or "").strip(), "email": (email or "").strip(),
+                                "tel": (tel or "").strip(), "sdi": (sdi or "").strip(), "ref": (ref or "").strip(),
+                                "citta": (citta or "").strip(), "prov": (provincia or "").strip(), "cap": (cap or "").strip()
+                            })
                         st.success("Azienda salvata!")
                         st.session_state["toggle_add_az"] = False
                         st.cache_data.clear()
@@ -372,16 +379,15 @@ with tab_aziende:
     st.markdown("---")
     st.markdown("### Elenco Aziende Registrate")
 
-    with get_connection() as conn:
-        if search_az:
-            s_term = f"%{search_az}%"
-            df_az = pd.read_sql("""
-                SELECT * FROM public.aziende 
-                WHERE ragione_sociale ILIKE %s OR piva ILIKE %s OR citta ILIKE %s OR referente ILIKE %s
-                ORDER BY ragione_sociale
-            """, conn, params=(s_term, s_term, s_term, s_term))
-        else:
-            df_az = load_aziende()
+    if search_az:
+        s_term = f"%{search_az}%"
+        df_az = pd.read_sql("""
+            SELECT * FROM public.aziende 
+            WHERE ragione_sociale ILIKE %(s)s OR piva ILIKE %(s)s OR citta ILIKE %(s)s OR referente ILIKE %(s)s
+            ORDER BY ragione_sociale
+        """, engine, params={"s": s_term})
+    else:
+        df_az = load_aziende()
 
     if df_az.empty:
         st.info("Nessuna azienda trovata.")
@@ -419,22 +425,23 @@ with tab_aziende:
                         m_cap = st.text_input("CAP", value=row['cap'] or "")
                         
                         if st.form_submit_button("💾 Salva Modifiche"):
-                            with get_connection() as conn:
-                                with conn.cursor() as cur:
-                                    cur.execute("""
-                                        UPDATE public.aziende SET ragione_sociale=%s, piva=%s, email=%s, telefono=%s, codice_sdi=%s, referente=%s, citta=%s, provincia=%s, cap=%s
-                                        WHERE id=%s
-                                    """, (m_rs.strip(), m_piva.strip(), m_email.strip(), m_tel.strip(), m_sdi.strip(), m_ref.strip(), m_cit.strip(), m_pr.strip(), m_cap.strip(), int(row['id'])))
-                                    conn.commit()
+                            with engine.begin() as conn:
+                                conn.execute(text("""
+                                    UPDATE public.aziende SET ragione_sociale=:rs, piva=:piva, email=:email, telefono=:tel, 
+                                           codice_sdi=:sdi, referente=:ref, citta=:citta, provincia=:pr, cap=:cap
+                                    WHERE id=:id
+                                """), {
+                                    "rs": m_rs.strip(), "piva": m_piva.strip(), "email": m_email.strip(),
+                                    "tel": m_tel.strip(), "sdi": m_sdi.strip(), "ref": m_ref.strip(),
+                                    "citta": m_cit.strip(), "pr": m_pr.strip(), "cap": m_cap.strip(), "id": int(row['id'])
+                                })
                             st.success("Azienda aggiornata!")
                             st.cache_data.clear()
                             st.rerun()
 
                 if col_b3.button("🗑️", key=f"del_az_{row['id']}"):
-                    with get_connection() as conn:
-                        with conn.cursor() as cur:
-                            cur.execute("DELETE FROM public.aziende WHERE id=%s", (int(row['id']),))
-                            conn.commit()
+                    with engine.begin() as conn:
+                        conn.execute(text("DELETE FROM public.aziende WHERE id=:id"), {"id": int(row['id'])})
                     st.warning("Azienda eliminata!")
                     st.cache_data.clear()
                     st.rerun()
@@ -451,10 +458,8 @@ with tab_settori_op:
         with st.form("add_settore_form_new", clear_on_submit=True):
             n_settore = st.text_input("Nome Nuovo Settore")
             if st.form_submit_button("➕ Aggiungi Settore") and n_settore:
-                with get_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("INSERT INTO public.settori (nome) VALUES (%s)", (n_settore.strip(),))
-                        conn.commit()
+                with engine.begin() as conn:
+                    conn.execute(text("INSERT INTO public.settori (nome) VALUES (:nome)"), {"nome": n_settore.strip()})
                 st.success("Settore creato!")
                 st.cache_data.clear()
                 st.rerun()
@@ -470,18 +475,14 @@ with tab_settori_op:
                 with st.form(f"mod_sec_{s_row['id']}"):
                     edit_s_name = st.text_input("Nome Settore", value=s_row['nome'])
                     if st.form_submit_button("Salva"):
-                        with get_connection() as conn:
-                            with conn.cursor() as cur:
-                                cur.execute("UPDATE public.settori SET nome=%s WHERE id=%s", (edit_s_name.strip(), int(s_row['id'])))
-                                conn.commit()
+                        with engine.begin() as conn:
+                            conn.execute(text("UPDATE public.settori SET nome=:nome WHERE id=:id"), {"nome": edit_s_name.strip(), "id": int(s_row['id'])})
                         st.cache_data.clear()
                         st.rerun()
 
             if cs_btn2.button("🗑️", key=f"del_sec_{s_row['id']}"):
-                with get_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("DELETE FROM public.settori WHERE id=%s", (int(s_row['id']),))
-                        conn.commit()
+                with engine.begin() as conn:
+                    conn.execute(text("DELETE FROM public.settori WHERE id=:id"), {"id": int(s_row['id'])})
                 st.cache_data.clear()
                 st.rerun()
 
@@ -495,10 +496,8 @@ with tab_settori_op:
             
             if st.form_submit_button("➕ Aggiungi Operatore") and n_op and s_op_name:
                 s_id_v = opts_sett[opts_sett["nome"] == s_op_name]["id"].values[0]
-                with get_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("INSERT INTO public.operatori (nome, settore_id) VALUES (%s, %s)", (n_op.strip(), int(s_id_v)))
-                        conn.commit()
+                with engine.begin() as conn:
+                    conn.execute(text("INSERT INTO public.operatori (nome, settore_id) VALUES (:nome, :sid)"), {"nome": n_op.strip(), "sid": int(s_id_v)})
                 st.success("Operatore aggiunto!")
                 st.cache_data.clear()
                 st.rerun()
@@ -517,18 +516,14 @@ with tab_settori_op:
                                               index=opts_sett["nome"].tolist().index(o_row['settore']) if o_row['settore'] in opts_sett["nome"].tolist() else 0)
                     if st.form_submit_button("Salva"):
                         new_s_id = opts_sett[opts_sett["nome"] == edit_o_sec]["id"].values[0]
-                        with get_connection() as conn:
-                            with conn.cursor() as cur:
-                                cur.execute("UPDATE public.operatori SET nome=%s, settore_id=%s WHERE id=%s", (edit_o_name.strip(), int(new_s_id), int(o_row['id'])))
-                                conn.commit()
+                        with engine.begin() as conn:
+                            conn.execute(text("UPDATE public.operatori SET nome=:nome, settore_id=:sid WHERE id=:id"), {"nome": edit_o_name.strip(), "sid": int(new_s_id), "id": int(o_row['id'])})
                         st.cache_data.clear()
                         st.rerun()
 
             if co_btn2.button("🗑", key=f"del_op_{o_row['id']}"):
-                with get_connection() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute("DELETE FROM public.operatori WHERE id=%s", (int(o_row['id']),))
-                        conn.commit()
+                with engine.begin() as conn:
+                    conn.execute(text("DELETE FROM public.operatori WHERE id=:id"), {"id": int(o_row['id'])})
                 st.cache_data.clear()
                 st.rerun()
 
@@ -564,18 +559,20 @@ with tab_prodotti:
                 if not p_nome or not p_nome.strip():
                     st.error("Il Nome del Prodotto è obbligatorio.")
                 else:
-                    with get_connection() as conn:
-                        with conn.cursor() as cur:
-                            cur.execute("""
-                                INSERT INTO public.prodotti (nome, macchina_gruppo_formato, disegno, materiale_trattamento, costo_interno, prezzo_vendita)
-                                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
-                            """, (p_nome.strip(), (p_formato or "").strip(), (p_disegno or "").strip(), (p_mat or "").strip(), float(costo_int), float(prezzo_ven)))
-                            new_p_id = cur.fetchone()[0]
+                    with engine.begin() as conn:
+                        res = conn.execute(text("""
+                            INSERT INTO public.prodotti (nome, macchina_gruppo_formato, disegno, materiale_trattamento, costo_interno, prezzo_vendita)
+                            VALUES (:nome, :fmt, :dis, :mat, :costo, :prezzo) RETURNING id
+                        """), {
+                            "nome": p_nome.strip(), "fmt": (p_formato or "").strip(), "dis": (p_disegno or "").strip(),
+                            "mat": (p_mat or "").strip(), "costo": float(costo_int), "prezzo": float(prezzo_ven)
+                        })
+                        new_p_id = res.fetchone()[0]
 
-                            for s_id, ore_v in ore_settori.items():
-                                if ore_v > 0:
-                                    cur.execute("INSERT INTO public.prodotto_ore_settori (prodotto_id, settore_id, ore) VALUES (%s, %s, %s)", (int(new_p_id), int(s_id), float(ore_v)))
-                            conn.commit()
+                        for s_id, ore_v in ore_settori.items():
+                            if ore_v > 0:
+                                conn.execute(text("INSERT INTO public.prodotto_ore_settori (prodotto_id, settore_id, ore) VALUES (:pid, :sid, :ore)"),
+                                             {"pid": int(new_p_id), "sid": int(s_id), "ore": float(ore_v)})
                     st.success("Prodotto salvato!")
                     st.rerun()
 
@@ -583,16 +580,15 @@ with tab_prodotti:
     st.markdown("### 🔍 Ricerca e Catalogo Prodotti")
     s_prod = st.text_input("Cerca Prodotto (per ID, Nome, Materiale, Disegno, Formato)", key="search_prod_field")
 
-    with get_connection() as conn:
-        if s_prod:
-            sp_term = f"%{s_prod}%"
-            df_prod_all = pd.read_sql("""
-                SELECT * FROM public.prodotti 
-                WHERE CAST(id AS TEXT) ILIKE %s OR nome ILIKE %s OR materiale_trattamento ILIKE %s OR disegno ILIKE %s OR macchina_gruppo_formato ILIKE %s
-                ORDER BY nome
-            """, conn, params=(sp_term, sp_term, sp_term, sp_term, sp_term))
-        else:
-            df_prod_all = pd.read_sql("SELECT * FROM public.prodotti ORDER BY nome", conn)
+    if s_prod:
+        sp_term = f"%{s_prod}%"
+        df_prod_all = pd.read_sql("""
+            SELECT * FROM public.prodotti 
+            WHERE CAST(id AS TEXT) ILIKE %(s)s OR nome ILIKE %(s)s OR materiale_trattamento ILIKE %(s)s OR disegno ILIKE %(s)s OR macchina_gruppo_formato ILIKE %(s)s
+            ORDER BY nome
+        """, engine, params={"s": sp_term})
+    else:
+        df_prod_all = pd.read_sql("SELECT * FROM public.prodotti ORDER BY nome", engine)
 
     if df_prod_all.empty:
         st.info("Nessun prodotto trovato.")
@@ -615,11 +611,10 @@ with tab_prodotti:
                     st.write(f"**Costo Interno:** {pr_row['costo_interno']:,.2f} €")
                     st.write(f"**Prezzo Vendita:** {pr_row['prezzo_vendita']:,.2f} €")
                     
-                    with get_connection() as conn:
-                        df_ore_p = pd.read_sql("""
-                            SELECT s.nome as settore, pos.ore FROM public.prodotto_ore_settori pos
-                            JOIN public.settori s ON pos.settore_id = s.id WHERE pos.prodotto_id = %s
-                        """, conn, params=(int(pr_row['id']),))
+                    df_ore_p = pd.read_sql("""
+                        SELECT s.nome as settore, pos.ore FROM public.prodotto_ore_settori pos
+                        JOIN public.settori s ON pos.settore_id = s.id WHERE pos.prodotto_id = %(pid)s
+                    """, engine, params={"pid": int(pr_row['id'])})
                     st.markdown("**Ore Previste per Settore:**")
                     st.dataframe(df_ore_p, use_container_width=True)
 
@@ -634,20 +629,20 @@ with tab_prodotti:
                         mp_prezzo = st.number_input("Prezzo Vendita (€)", value=float(pr_row['prezzo_vendita']))
                         
                         if st.form_submit_button("Salva"):
-                            with get_connection() as conn:
-                                with conn.cursor() as cur:
-                                    cur.execute("""
-                                        UPDATE public.prodotti SET nome=%s, macchina_gruppo_formato=%s, disegno=%s, materiale_trattamento=%s, costo_interno=%s, prezzo_vendita=%s
-                                        WHERE id=%s
-                                    """, (mp_nome.strip(), mp_formato.strip(), mp_dis.strip(), mp_mat.strip(), float(mp_costo), float(mp_prezzo), int(pr_row['id'])))
-                                    conn.commit()
+                            with engine.begin() as conn:
+                                conn.execute(text("""
+                                    UPDATE public.prodotti SET nome=:nome, macchina_gruppo_formato=:fmt, disegno=:dis, 
+                                           materiale_trattamento=:mat, costo_interno=:costo, prezzo_vendita=:prezzo
+                                    WHERE id=:id
+                                """), {
+                                    "nome": mp_nome.strip(), "fmt": mp_formato.strip(), "dis": mp_dis.strip(),
+                                    "mat": mp_mat.strip(), "costo": float(mp_costo), "prezzo": float(mp_prezzo), "id": int(pr_row['id'])
+                                })
                             st.rerun()
 
                 if col_pb3.button("🗑️", key=f"del_pr_{pr_row['id']}"):
-                    with get_connection() as conn:
-                        with conn.cursor() as cur:
-                            cur.execute("DELETE FROM public.prodotti WHERE id=%s", (int(pr_row['id']),))
-                            conn.commit()
+                    with engine.begin() as conn:
+                        conn.execute(text("DELETE FROM public.prodotti WHERE id=:id"), {"id": int(pr_row['id'])})
                     st.rerun()
 
 # ---------------------------------------------------------
@@ -659,8 +654,7 @@ with tab_prev:
 
     with pr_tab1:
         az_opts = load_aziende()
-        with get_connection() as conn:
-            prod_opts = pd.read_sql("SELECT id, nome, prezzo_vendita FROM public.prodotti ORDER BY nome", conn)
+        prod_opts = pd.read_sql("SELECT id, nome, prezzo_vendita FROM public.prodotti ORDER BY nome", engine)
 
         if az_opts.empty or prod_opts.empty:
             st.warning("Devi inserire almeno un'Azienda e un Prodotto prima di poter creare un preventivo.")
@@ -707,22 +701,24 @@ with tab_prev:
 
                 csav, cclr = st.columns(2)
                 if csav.button("💾 Salva e Conferma Preventivo"):
-                    with get_connection() as conn:
-                        with conn.cursor() as cur:
-                            cur.execute("""
-                                INSERT INTO public.preventivi (azienda_id, prezzo_totale, stato, data_creazione)
-                                VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-                                RETURNING id
-                            """, (int(az_id_selected), float(tot_prev_val), 'Bozza'))
-                            new_prev_id = cur.fetchone()[0]
+                    with engine.begin() as conn:
+                        res = conn.execute(text("""
+                            INSERT INTO public.preventivi (azienda_id, prezzo_totale, stato, data_creazione)
+                            VALUES (:aid, :tot, 'Bozza', CURRENT_TIMESTAMP)
+                            RETURNING id
+                        """), {"aid": int(az_id_selected), "tot": float(tot_prev_val)})
+                        new_prev_id = res.fetchone()[0]
 
-                            for item in st.session_state.cart_preventivo:
-                                cur.execute("""
-                                    INSERT INTO public.preventivo_dettagli (preventivo_id, prodotto_id, quantita, prezzo_unitario, prezzo_totale)
-                                    VALUES (%s, %s, %s, %s, %s)
-                                """, (int(new_prev_id), int(item['prodotto_id']), int(item['quantita']), float(item['prezzo_unitario']), float(item['prezzo_totale'])))
+                        for item in st.session_state.cart_preventivo:
+                            conn.execute(text("""
+                                INSERT INTO public.preventivo_dettagli (preventivo_id, prodotto_id, quantita, prezzo_unitario, prezzo_totale)
+                                VALUES (:prev_id, :prod_id, :q, :pu, :pt)
+                            """), {
+                                "prev_id": int(new_prev_id), "prod_id": int(item['prodotto_id']),
+                                "q": int(item['quantita']), "pu": float(item['prezzo_unitario']),
+                                "pt": float(item['prezzo_totale'])
+                            })
 
-                            conn.commit()
                     st.session_state.cart_preventivo = []
                     st.success(f"Preventivo N. {new_prev_id} salvato con successo!")
                     st.rerun()
@@ -733,14 +729,13 @@ with tab_prev:
 
     with pr_tab2:
         st.markdown("### Elenco Preventivi")
-        with get_connection() as conn:
-            df_prev_list = pd.read_sql("""
-                SELECT p.id, a.ragione_sociale, a.citta, a.provincia, a.cap, a.piva,
-                       p.prezzo_totale, p.stato, p.data_creazione
-                FROM public.preventivi p
-                JOIN public.aziende a ON p.azienda_id = a.id
-                ORDER BY p.id DESC
-            """, conn)
+        df_prev_list = pd.read_sql("""
+            SELECT p.id, a.ragione_sociale, a.citta, a.provincia, a.cap, a.piva,
+                   p.prezzo_totale, p.stato, p.data_creazione
+            FROM public.preventivi p
+            JOIN public.aziende a ON p.azienda_id = a.id
+            ORDER BY p.id DESC
+        """, engine)
 
         if df_prev_list.empty:
             st.info("Nessun preventivo registrato.")
@@ -755,20 +750,17 @@ with tab_prev:
                         nuovo_st = st.selectbox("Stato Preventivo", stati_possibili, index=idx_st, key=f"st_sel_{r_prev['id']}")
                         
                         if st.button("Aggiorna Stato", key=f"btn_upd_st_{r_prev['id']}"):
-                            with get_connection() as conn:
-                                with conn.cursor() as cur:
-                                    cur.execute("UPDATE public.preventivi SET stato=%s WHERE id=%s", (nuovo_st, int(r_prev['id'])))
-                                    conn.commit()
+                            with engine.begin() as conn:
+                                conn.execute(text("UPDATE public.preventivi SET stato=:st WHERE id=:id"), {"st": nuovo_st, "id": int(r_prev['id'])})
                             st.success("Stato aggiornato!")
                             st.rerun()
 
-                    with get_connection() as conn:
-                        df_det = pd.read_sql("""
-                            SELECT pd.*, pr.nome as prodotto
-                            FROM public.preventivo_dettagli pd
-                            JOIN public.prodotti pr ON pd.prodotto_id = pr.id
-                            WHERE pd.preventivo_id = %s
-                        """, conn, params=(int(r_prev['id']),))
+                    df_det = pd.read_sql("""
+                        SELECT pd.*, pr.nome as prodotto
+                        FROM public.preventivo_dettagli pd
+                        JOIN public.prodotti pr ON pd.prodotto_id = pr.id
+                        WHERE pd.preventivo_id = %(pid)s
+                    """, engine, params={"pid": int(r_prev['id'])})
 
                     st.markdown("**Dettaglio Articoli:**")
                     st.dataframe(df_det[["prodotto", "quantita", "prezzo_unitario", "prezzo_totale"]], use_container_width=True)
@@ -800,14 +792,13 @@ with tab_prev:
 with tab_lav:
     st.subheader("Ordini in Lavorazione")
     
-    with get_connection() as conn:
-        df_ord_lav = pd.read_sql("""
-            SELECT p.id as preventivo_id, a.ragione_sociale, p.prezzo_totale, p.data_creazione
-            FROM public.preventivi p
-            JOIN public.aziende a ON p.azienda_id = a.id
-            WHERE p.stato = 'In lavorazione'
-            ORDER BY p.id DESC
-        """, conn)
+    df_ord_lav = pd.read_sql("""
+        SELECT p.id as preventivo_id, a.ragione_sociale, p.prezzo_totale, p.data_creazione
+        FROM public.preventivi p
+        JOIN public.aziende a ON p.azienda_id = a.id
+        WHERE p.stato = 'In lavorazione'
+        ORDER BY p.id DESC
+    """, engine)
 
     df_all_settori = load_settori()
     df_all_operatori = load_operatori()
@@ -818,8 +809,7 @@ with tab_lav:
         for _, r_lav in df_ord_lav.iterrows():
             p_id = int(r_lav['preventivo_id'])
             
-            with get_connection() as conn:
-                tot_ore_res = pd.read_sql("SELECT COALESCE(SUM(ore), 0) FROM public.ore_lavorate WHERE preventivo_id = %s", conn, params=(p_id,)).iloc[0, 0]
+            tot_ore_res = pd.read_sql("SELECT COALESCE(SUM(ore), 0) FROM public.ore_lavorate WHERE preventivo_id = %(pid)s", engine, params={"pid": p_id}).iloc[0, 0]
 
             col_inf, col_btn1, col_btn2, col_btn3 = st.columns([2.5, 1.2, 1.1, 1.2])
             
@@ -861,36 +851,36 @@ with tab_lav:
                         if not inputs_ore:
                             st.error("Seleziona almeno un operatore e inserisci le ore lavorate.")
                         else:
-                            with get_connection() as conn:
-                                with conn.cursor() as cur:
-                                    for sec_id, data_o in inputs_ore.items():
-                                        cur.execute("""
-                                            INSERT INTO public.ore_lavorate (preventivo_id, settore_id, operatore_id, data_lavorazione, ore)
-                                            VALUES (%s, %s, %s, %s, %s)
-                                        """, (p_id, sec_id, data_o['operatore_id'], d_lav, data_o['ore']))
-                                    conn.commit()
+                            with engine.begin() as conn:
+                                for sec_id, data_o in inputs_ore.items():
+                                    conn.execute(text("""
+                                        INSERT INTO public.ore_lavorate (preventivo_id, settore_id, operatore_id, data_lavorazione, ore)
+                                        VALUES (:prev_id, :sec_id, :op_id, :dt, :ore)
+                                    """), {
+                                        "prev_id": p_id, "sec_id": sec_id,
+                                        "op_id": data_o['operatore_id'], "dt": d_lav, "ore": data_o['ore']
+                                    })
                             st.success("Ore registrate con successo!")
                             st.rerun()
 
             with col_btn2.popover("🔍 Dettaglio"):
                 st.markdown(f"#### Dettaglio Ordine #{p_id}")
                 
-                with get_connection() as conn:
-                    df_det_prod = pd.read_sql("""
-                        SELECT pr.nome as Prodotto, pd.quantita as Quantità, pd.prezzo_totale as Totale
-                        FROM public.preventivo_dettagli pd
-                        JOIN public.prodotti pr ON pd.prodotto_id = pr.id
-                        WHERE pd.preventivo_id = %s
-                    """, conn, params=(p_id,))
-                    
-                    df_det_ore = pd.read_sql("""
-                        SELECT ol.data_lavorazione as Data, s.nome as Settore, o.nome as Operatore, ol.ore as Ore
-                        FROM public.ore_lavorate ol
-                        JOIN public.settori s ON ol.settore_id = s.id
-                        LEFT JOIN public.operatori o ON ol.operatore_id = o.id
-                        WHERE ol.preventivo_id = %s
-                        ORDER BY ol.data_lavorazione DESC
-                    """, conn, params=(p_id,))
+                df_det_prod = pd.read_sql("""
+                    SELECT pr.nome as Prodotto, pd.quantita as Quantità, pd.prezzo_totale as Totale
+                    FROM public.preventivo_dettagli pd
+                    JOIN public.prodotti pr ON pd.prodotto_id = pr.id
+                    WHERE pd.preventivo_id = %(pid)s
+                """, engine, params={"pid": p_id})
+                
+                df_det_ore = pd.read_sql("""
+                    SELECT ol.data_lavorazione as Data, s.nome as Settore, o.nome as Operatore, ol.ore as Ore
+                    FROM public.ore_lavorate ol
+                    JOIN public.settori s ON ol.settore_id = s.id
+                    LEFT JOIN public.operatori o ON ol.operatore_id = o.id
+                    WHERE ol.preventivo_id = %(pid)s
+                    ORDER BY ol.data_lavorazione DESC
+                """, engine, params={"pid": p_id})
 
                 st.markdown("**Prodotti in Ordine:**")
                 st.dataframe(df_det_prod, use_container_width=True)
@@ -906,10 +896,8 @@ with tab_lav:
 
             with col_btn3:
                 if st.button("✅ Completato", key=f"btn_comp_{p_id}", use_container_width=True):
-                    with get_connection() as conn:
-                        with conn.cursor() as cur:
-                            cur.execute("UPDATE public.preventivi SET stato = 'Completato' WHERE id = %s", (p_id,))
-                            conn.commit()
+                    with engine.begin() as conn:
+                        conn.execute(text("UPDATE public.preventivi SET stato = 'Completato' WHERE id = :pid"), {"pid": p_id})
                     st.success(f"Ordine #{p_id} spostato in 'Completato'!")
                     st.rerun()
 
@@ -921,23 +909,22 @@ with tab_lav:
 with tab_rep:
     st.subheader("Report e Analisi Ordini")
     
-    with get_connection() as conn:
-        df_rep = pd.read_sql("""
-            SELECT stato, COUNT(*) as conteggio, COALESCE(SUM(prezzo_totale), 0) as totale_euro
-            FROM public.preventivi
-            GROUP BY stato
-        """, conn)
+    df_rep = pd.read_sql("""
+        SELECT stato, COUNT(*) as conteggio, COALESCE(SUM(prezzo_totale), 0) as totale_euro
+        FROM public.preventivi
+        GROUP BY stato
+    """, engine)
 
-        df_completati = pd.read_sql("""
-            SELECT p.id as preventivo_id, a.ragione_sociale, p.prezzo_totale, p.data_creazione,
-                   COALESCE(SUM(ol.ore), 0) as totale_ore
-            FROM public.preventivi p
-            JOIN public.aziende a ON p.azienda_id = a.id
-            LEFT JOIN public.ore_lavorate ol ON p.id = ol.preventivo_id
-            WHERE p.stato = 'Completato'
-            GROUP BY p.id, a.ragione_sociale, p.prezzo_totale, p.data_creazione
-            ORDER BY p.id DESC
-        """, conn)
+    df_completati = pd.read_sql("""
+        SELECT p.id as preventivo_id, a.ragione_sociale, p.prezzo_totale, p.data_creazione,
+               COALESCE(SUM(ol.ore), 0) as totale_ore
+        FROM public.preventivi p
+        JOIN public.aziende a ON p.azienda_id = a.id
+        LEFT JOIN public.ore_lavorate ol ON p.id = ol.preventivo_id
+        WHERE p.stato = 'Completato'
+        GROUP BY p.id, a.ragione_sociale, p.prezzo_totale, p.data_creazione
+        ORDER BY p.id DESC
+    """, engine)
 
     col_r1, col_r2 = st.columns(2)
     with col_r1:
