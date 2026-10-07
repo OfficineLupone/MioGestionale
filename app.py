@@ -61,6 +61,11 @@ def load_aziende():
     engine = get_db_engine()
     return pd.read_sql("SELECT * FROM public.aziende ORDER BY ragione_sociale", engine)
 
+@st.cache_data(ttl=60)
+def load_prodotti():
+    engine = get_db_engine()
+    return pd.read_sql("SELECT * FROM public.prodotti ORDER BY nome", engine)
+
 # =========================================================
 # STILE GRAFICO PERSONALIZZATO
 # =========================================================
@@ -574,6 +579,7 @@ with tab_prodotti:
                                 conn.execute(text("INSERT INTO public.prodotto_ore_settori (prodotto_id, settore_id, ore) VALUES (:pid, :sid, :ore)"),
                                              {"pid": int(new_p_id), "sid": int(s_id), "ore": float(ore_v)})
                     st.success("Prodotto salvato!")
+                    st.cache_data.clear()
                     st.rerun()
 
     st.markdown("---")
@@ -588,7 +594,7 @@ with tab_prodotti:
             ORDER BY nome
         """, engine, params={"s": sp_term})
     else:
-        df_prod_all = pd.read_sql("SELECT * FROM public.prodotti ORDER BY nome", engine)
+        df_prod_all = load_prodotti()
 
     if df_prod_all.empty:
         st.info("Nessun prodotto trovato.")
@@ -638,11 +644,13 @@ with tab_prodotti:
                                     "nome": mp_nome.strip(), "fmt": mp_formato.strip(), "dis": mp_dis.strip(),
                                     "mat": mp_mat.strip(), "costo": float(mp_costo), "prezzo": float(mp_prezzo), "id": int(pr_row['id'])
                                 })
+                            st.cache_data.clear()
                             st.rerun()
 
                 if col_pb3.button("🗑️", key=f"del_pr_{pr_row['id']}"):
                     with engine.begin() as conn:
                         conn.execute(text("DELETE FROM public.prodotti WHERE id=:id"), {"id": int(pr_row['id'])})
+                    st.cache_data.clear()
                     st.rerun()
 
 # ---------------------------------------------------------
@@ -654,7 +662,7 @@ with tab_prev:
 
     with pr_tab1:
         az_opts = load_aziende()
-        prod_opts = pd.read_sql("SELECT id, nome, prezzo_vendita FROM public.prodotti ORDER BY nome", engine)
+        prod_opts = load_prodotti()
 
         if az_opts.empty or prod_opts.empty:
             st.warning("Devi inserire almeno un'Azienda e un Prodotto prima di poter creare un preventivo.")
