@@ -81,8 +81,14 @@ def init_db():
                 disegno VARCHAR(255),
                 materiale_trattamento VARCHAR(255),
                 costo_interno NUMERIC(10, 2) DEFAULT 0.0,
-                prezzo_vendita NUMERIC(10, 2) DEFAULT 0.0
+                prezzo_vendita NUMERIC(10, 2) DEFAULT 0.0,
+                note TEXT
             );
+        """))
+
+        # Aggiunta colonna note in caso di aggiornamento da versione precedente
+        conn.execute(text("""
+            ALTER TABLE public.prodotti ADD COLUMN IF NOT EXISTS note TEXT;
         """))
 
         # Rimuove vincoli NOT NULL restrittivi se presenti
