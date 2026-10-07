@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 from fpdf import FPDF
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from google import genai
 from sqlalchemy import text
 from database import init_db, get_db_engine
@@ -90,7 +90,7 @@ st.markdown("""
         font-size: 20px;
     }
     
-    /* Design Tabelle Streamlit (rimozione bordi pesanti, intestazioni morbide) */
+    /* Design Tabelle Streamlit */
     [data-testid="stDataFrame"] > div {
         border-radius: 8px;
         overflow: hidden;
@@ -134,14 +134,6 @@ st.markdown("""
         font-weight: 600 !important;
         padding: 6px 12px !important;
         transition: all 0.2s;
-    }
-    .btn-action-outline {
-        border: 1px solid #D1D5DB !important;
-        color: #374151 !important;
-        background-color: white !important;
-    }
-    .btn-action-outline:hover {
-        background-color: #F3F4F6 !important;
     }
 
     div[data-testid="stMetric"] {
@@ -205,7 +197,6 @@ def genera_pdf_preventivo(id_preventivo, ragione_sociale, citta, provincia, cap,
         p_name = str(art['prodotto'])[:48]
         pdf.cell(95, 8, f" {p_name}", border=1, fill=True)
         pdf.cell(20, 8, str(art['quantita']), border=1, align='C', fill=True)
-        # Protezione per prezzo unitario in caso manchi
         pu = art.get('prezzo_unitario') or 0.0
         pdf.cell(35, 8, f"{pu:,.2f}", border=1, align='R', fill=True)
         pdf.cell(40, 8, f"{art['prezzo_totale']:,.2f}", border=1, align='R', fill=True)
@@ -336,7 +327,7 @@ with tab_aziende:
         df_az = load_aziende()
 
     if df_az.empty:
-        st.info("Nessuna azienda trovata.")
+        st.info("Nessunaazienda trovata.")
     else:
         for _, row in df_az.iterrows():
             c_info, c_actions = st.columns([3, 3])
@@ -421,42 +412,58 @@ with tab_aziende:
             st.write("")
 
 # ---------------------------------------------------------
-# 3. SETTORI E OPERATORI
+# 3. SETTORI E OPERATORI (Interfaccia Grafica Moderna)
 # ---------------------------------------------------------
 with tab_settori_op:
     st.subheader("Gestione Settori & Operatori")
-    col_sec, col_op = st.columns(2)
+    
+    col_sec_in, col_op_in = st.columns(2)
 
-    with col_sec:
-        st.markdown("#### 📁 Settori di Produzione")
-        with st.form("add_settore_form_new", clear_on_submit=True):
-            n_settore = st.text_input("Nome Nuovo Settore")
-            if st.form_submit_button("➕ Aggiungi Settore") and n_settore:
-                with engine.begin() as conn:
-                    conn.execute(text("INSERT INTO public.settori (nome) VALUES (:nome)"), {"nome": n_settore.strip()})
-                st.cache_data.clear()
-                st.rerun()
+    with col_sec_in:
+        with st.container(border=True):
+            st.markdown("### 📁 Nuovo Settore")
+            with st.form("add_settore_form_new", clear_on_submit=True):
+                n_settore = st.text_input("Nome Settore", placeholder="Es. Fresatura, Torni, Montaggio")
+                if st.form_submit_button("➕ Aggiungi Settore", use_container_width=True) and n_settore:
+                    with engine.begin() as conn:
+                        conn.execute(text("INSERT INTO public.settori (nome) VALUES (:nome)"), {"nome": n_settore.strip()})
+                    st.cache_data.clear()
+                    st.rerun()
 
-        df_settori = load_settori()
-        if not df_settori.empty:
-            st.dataframe(df_settori, hide_index=True, use_container_width=True)
+    with col_op_in:
+        with st.container(border=True):
+            st.markdown("### 👷 Nuovo Operatore")
+            opts_sett = load_settori()
+            with st.form("add_operatore_form_new", clear_on_submit=True):
+                n_op = st.text_input("Nome Operatore", placeholder="Es. Mario Rossi")
+                s_op_name = st.selectbox("Assegna al Settore", opts_sett["nome"].tolist() if not opts_sett.empty else [])
+                if st.form_submit_button("➕ Aggiungi Operatore", use_container_width=True) and n_op and s_op_name:
+                    s_id_v = opts_sett[opts_sett["nome"] == s_op_name]["id"].values[0]
+                    with engine.begin() as conn:
+                        conn.execute(text("INSERT INTO public.operatori (nome, settore_id) VALUES (:nome, :sid)"), {"nome": n_op.strip(), "sid": int(s_id_v)})
+                    st.cache_data.clear()
+                    st.rerun()
 
-    with col_op:
-        st.markdown("#### 👷 Operatori")
-        opts_sett = load_settori()
-        with st.form("add_operatore_form_new", clear_on_submit=True):
-            n_op = st.text_input("Nome Operatore")
-            s_op_name = st.selectbox("Abbina a Settore", opts_sett["nome"].tolist() if not opts_sett.empty else [])
-            if st.form_submit_button("➕ Aggiungi Operatore") and n_op and s_op_name:
-                s_id_v = opts_sett[opts_sett["nome"] == s_op_name]["id"].values[0]
-                with engine.begin() as conn:
-                    conn.execute(text("INSERT INTO public.operatori (nome, settore_id) VALUES (:nome, :sid)"), {"nome": n_op.strip(), "sid": int(s_id_v)})
-                st.cache_data.clear()
-                st.rerun()
+    st.markdown("---")
+    st.markdown("### 🛠️ Organigramma Settori e Team")
 
-        df_op_list = load_operatori()
-        if not df_op_list.empty:
-            st.dataframe(df_op_list[["operatore", "settore"]], hide_index=True, use_container_width=True)
+    df_settori = load_settori()
+    df_op_list = load_operatori()
+
+    if df_settori.empty:
+        st.info("Nessun settore ancora configurato.")
+    else:
+        grid_cols = st.columns(3)
+        for idx, s_row in df_settori.iterrows():
+            with grid_cols[idx % 3]:
+                with st.container(border=True):
+                    st.markdown(f"#### 🏢 {s_row['nome']}")
+                    ops_in_sett = df_op_list[df_op_list['settore_id'] == s_row['id']] if not df_op_list.empty else pd.DataFrame()
+                    if not ops_in_sett.empty:
+                        for _, op_r in ops_in_sett.iterrows():
+                            st.markdown(f"• 👤 **{op_r['operatore']}**")
+                    else:
+                        st.caption("Nessun operatore in questo settore.")
 
 # ---------------------------------------------------------
 # 4. PRODOTTI
@@ -525,14 +532,31 @@ with tab_prodotti:
         for _, pr_row in df_prod_all.iterrows():
             cp_info, cp_act = st.columns([4, 2])
             with cp_info:
-                st.markdown(f"**#{pr_row['id']} - {pr_row['nome']}** | Prezzo: `{pr_row['prezzo_vendita']:,.2f} €`")
+                # Visualizzazione estesa nel catalogo: ID, Nome, Formato, Disegno, Materiale, Prezzo
+                fmt_str = f" | Formato: `{pr_row['macchina_gruppo_formato']}`" if pr_row.get('macchina_gruppo_formato') else ""
+                dis_str = f" | Disegno: `{pr_row['disegno']}`" if pr_row.get('disegno') else ""
+                mat_str = f" | Materiale: `{pr_row['materiale_trattamento']}`" if pr_row.get('materiale_trattamento') else ""
+                
+                st.markdown(f"**#{pr_row['id']} - {pr_row['nome']}**{fmt_str}{dis_str}{mat_str} | Prezzo: `{pr_row['prezzo_vendita']:,.2f} €`")
+            
             with cp_act:
                 col_pb1, col_pb2, col_pb3 = st.columns(3)
                 
                 with col_pb1.popover("📄 Dettagli"):
+                    c_int = float(pr_row['costo_interno'] or 0.0)
+                    p_ven = float(pr_row['prezzo_vendita'] or 0.0)
+                    margine_val = p_ven - c_int
+                    margine_perc = (margine_val / p_ven * 100) if p_ven > 0 else 0.0
+
                     df_det_p = pd.DataFrame([{
-                        "Formato": pr_row['macchina_gruppo_formato'], "Disegno": pr_row['disegno'],
-                        "Materiale": pr_row['materiale_trattamento'], "Note": pr_row['note']
+                        "Formato": pr_row['macchina_gruppo_formato'] or '-',
+                        "Disegno": pr_row['disegno'] or '-',
+                        "Materiale": pr_row['materiale_trattamento'] or '-',
+                        "Costo Interno": f"{c_int:,.2f} €",
+                        "Prezzo Vendita": f"{p_ven:,.2f} €",
+                        "Margine (€)": f"{margine_val:,.2f} €",
+                        "Margine (%)": f"{margine_perc:.1f}%",
+                        "Note": pr_row['note'] or '-'
                     }])
                     st.dataframe(df_det_p, hide_index=True, use_container_width=True)
 
@@ -604,7 +628,11 @@ with tab_prev:
 
             if st.session_state.cart_preventivo:
                 df_cart = pd.DataFrame(st.session_state.cart_preventivo)
-                st.dataframe(df_cart[["prodotto", "quantita", "prezzo_unitario", "prezzo_totale"]], hide_index=True, use_container_width=True)
+                df_cart_vis = df_cart.copy()
+                df_cart_vis['prezzo_unitario'] = df_cart_vis['prezzo_unitario'].apply(lambda x: f"{x:,.2f} €")
+                df_cart_vis['prezzo_totale'] = df_cart_vis['prezzo_totale'].apply(lambda x: f"{x:,.2f} €")
+                
+                st.dataframe(df_cart_vis[["prodotto", "quantita", "prezzo_unitario", "prezzo_totale"]], hide_index=True, use_container_width=True)
                 
                 tot_prev_val = df_cart['prezzo_totale'].sum()
                 st.markdown(f"### Totale Complessivo: `{tot_prev_val:,.2f} €`")
@@ -633,9 +661,17 @@ with tab_prev:
         az_df_filt = load_aziende()
         filter_az = col_s2.selectbox("Azienda", ["Tutte"] + (az_df_filt["ragione_sociale"].tolist() if not az_df_filt.empty else []))
         filter_stato = col_s3.selectbox("Stato", ["Tutti", "Bozza", "Accettato", "In lavorazione", "Completato", "Annullato"])
-        
+        filter_data = col_s4.selectbox("Filtro Data", ["Tutti", "Ultimi 7 giorni", "Mese corrente", "Anno corrente", "Personalizzato"])
+
+        start_date, end_date = None, None
+        if filter_data == "Personalizzato":
+            cd1, cd2 = st.columns(2)
+            start_date = cd1.date_input("Data Inizio", value=date.today() - timedelta(days=30))
+            end_date = cd2.date_input("Data Fine", value=date.today())
+
         query_prev = "SELECT p.id, a.ragione_sociale, a.citta, a.provincia, a.cap, a.piva, p.prezzo_totale, p.stato, p.data_creazione FROM public.preventivi p JOIN public.aziende a ON p.azienda_id = a.id WHERE 1=1"
         params_p = {}
+
         if search_prev:
             query_prev += " AND (CAST(p.id AS TEXT) ILIKE %(sp)s OR a.ragione_sociale ILIKE %(sp)s)"
             params_p["sp"] = f"%{search_prev.strip()}%"
@@ -645,6 +681,17 @@ with tab_prev:
         if filter_stato != "Tutti":
             query_prev += " AND p.stato = %(fst)s"
             params_p["fst"] = filter_stato
+
+        if filter_data == "Ultimi 7 giorni":
+            query_prev += " AND p.data_creazione >= CURRENT_DATE - INTERVAL '7 days'"
+        elif filter_data == "Mese corrente":
+            query_prev += " AND DATE_TRUNC('month', p.data_creazione) = DATE_TRUNC('month', CURRENT_DATE)"
+        elif filter_data == "Anno corrente":
+            query_prev += " AND DATE_TRUNC('year', p.data_creazione) = DATE_TRUNC('year', CURRENT_DATE)"
+        elif filter_data == "Personalizzato" and start_date and end_date:
+            query_prev += " AND p.data_creazione::date BETWEEN %(sd)s AND %(ed)s"
+            params_p["sd"] = start_date
+            params_p["ed"] = end_date
 
         query_prev += " ORDER BY p.id DESC"
         df_prev_list = pd.read_sql(query_prev, engine, params=params_p)
@@ -660,7 +707,6 @@ with tab_prev:
                             conn.execute(text("UPDATE public.preventivi SET stato=:st WHERE id=:id"), {"st": nuovo_st, "id": int(r_prev['id'])})
                         st.rerun()
 
-                # Query corretta: recuperiamo le chiavi esatte che servono al PDF e poi rinominiamo solo per la UI
                 df_det = pd.read_sql("""
                     SELECT pr.nome as prodotto, 
                            pd.quantita as quantita, 
@@ -671,8 +717,10 @@ with tab_prev:
                     WHERE pd.preventivo_id = %(pid)s
                 """, engine, params={"pid": int(r_prev['id'])})
                 
-                # Rinominiamo le colonne solo per la visualizzazione sulla pagina web in modo da farle belle
-                df_visiva = df_det.rename(columns={
+                df_visiva = df_det.copy()
+                df_visiva['prezzo_unitario'] = df_visiva['prezzo_unitario'].apply(lambda x: f"{x:,.2f} €")
+                df_visiva['prezzo_totale'] = df_visiva['prezzo_totale'].apply(lambda x: f"{x:,.2f} €")
+                df_visiva = df_visiva.rename(columns={
                     'prodotto': 'Prodotto',
                     'quantita': 'Q.tà',
                     'prezzo_unitario': 'Prezzo Unit. (€)',
@@ -681,7 +729,7 @@ with tab_prev:
                 st.dataframe(df_visiva, hide_index=True, use_container_width=True)
 
                 pdf_bytes = genera_pdf_preventivo(r_prev['id'], r_prev['ragione_sociale'], r_prev['citta'], r_prev['provincia'], r_prev['cap'], r_prev['piva'], r_prev['data_creazione'].strftime("%d/%m/%Y"), df_det.to_dict('records'), r_prev['prezzo_totale'])
-                st.download_button("📄 PDF", data=pdf_bytes, file_name=f"Prev_{r_prev['id']}.pdf", mime="application/pdf", key=f"dl_pdf_{r_prev['id']}")
+                st.download_button("📄 Download PDF", data=pdf_bytes, file_name=f"Prev_{r_prev['id']}.pdf", mime="application/pdf", key=f"dl_pdf_{r_prev['id']}")
 
 # ---------------------------------------------------------
 # 6. LAVORAZIONE
@@ -700,7 +748,7 @@ with tab_lav:
             col_inf, col_btn1, col_btn2, col_btn3 = st.columns([2.5, 1.2, 1.1, 1.2])
             
             with col_inf:
-                st.markdown(f"**Ordine #{p_id}** - {r_lav['ragione_sociale']}")
+                st.markdown(f"**Ordine #{p_id}** - {r_lav['ragione_sociale']} (`{r_lav['prezzo_totale']:,.2f} €`)")
             
             with col_btn1.popover("⏱️ Registra Ore"):
                 df_prod_in_prev = pd.read_sql("SELECT pd.prodotto_id, pr.nome FROM public.preventivo_dettagli pd JOIN public.prodotti pr ON pd.prodotto_id = pr.id WHERE pd.preventivo_id = %(pid)s", engine, params={"pid": p_id})
@@ -748,18 +796,68 @@ with tab_lav:
 with tab_rep:
     st.subheader("Report e Analisi Aziendale")
     
-    # 1. Riepilogo Preventivi (Senza Index, Tutti gli stati)
+    # 1. Riepilogo Preventivi
     st.markdown("#### Riepilogo Preventivi per Stato")
     df_rep_raw = pd.read_sql("SELECT stato, COUNT(*) as conteggio, COALESCE(SUM(prezzo_totale), 0) as totale_euro FROM public.preventivi GROUP BY stato", engine)
     stati_completi = pd.DataFrame({"stato": ["Bozza", "Accettato", "In lavorazione", "Completato", "Annullato"]})
     df_rep_final = stati_completi.merge(df_rep_raw, on='stato', how='left').fillna(0)
+    df_rep_final['totale_euro'] = df_rep_final['totale_euro'].apply(lambda x: f"{x:,.2f} €")
     df_rep_final.rename(columns={'stato': 'Stato', 'conteggio': 'N. Preventivi', 'totale_euro': 'Totale (€)'}, inplace=True)
     st.dataframe(df_rep_final, hide_index=True, use_container_width=True)
 
     st.markdown("---")
+
+    # 2. Resoconto Ore Preventivate vs Ore Effettive Lavorate
+    st.markdown("### ⏱️ Resoconto Efficienza Lavorazioni (Ore Previste vs Ore Effettive)")
     
-    # 2. Analisi Incassi e Produttività
-    st.markdown("### 📈 Analisi Incassi e Produttività (Preventivato vs Effettivo)")
+    q_confronto_ore = """
+        WITH prev_ore AS (
+            SELECT pd.preventivo_id, SUM(pd.quantita * COALESCE(pos.ore, 0)) AS total_ore_previste
+            FROM public.preventivo_dettagli pd
+            JOIN public.prodotto_ore_settori pos ON pd.prodotto_id = pos.prodotto_id
+            GROUP BY pd.preventivo_id
+        ),
+        eff_ore AS (
+            SELECT ol.preventivo_id, SUM(ol.ore) AS total_ore_effettive
+            FROM public.ore_lavorate ol
+            GROUP BY ol.preventivo_id
+        )
+        SELECT p.id AS preventivo_id,
+               a.ragione_sociale,
+               p.stato,
+               p.prezzo_totale,
+               COALESCE(po.total_ore_previste, 0) AS ore_previste,
+               COALESCE(eo.total_ore_effettive, 0) AS ore_effettive,
+               (COALESCE(po.total_ore_previste, 0) - COALESCE(eo.total_ore_effettive, 0)) AS differenza
+        FROM public.preventivi p
+        JOIN public.aziende a ON p.azienda_id = a.id
+        LEFT JOIN prev_ore po ON p.id = po.preventivo_id
+        LEFT JOIN eff_ore eo ON p.id = eo.preventivo_id
+        WHERE p.stato IN ('Accettato', 'In lavorazione', 'Completato')
+        ORDER BY p.id DESC
+    """
+    df_ore_comp = pd.read_sql(q_confronto_ore, engine)
+
+    if df_ore_comp.empty:
+        st.info("Nessun dato relativo ad ordini o lavorazioni confermate.")
+    else:
+        df_ore_comp_vis = pd.DataFrame()
+        df_ore_comp_vis["Preventivo"] = df_ore_comp.apply(lambda r: f"#{r['preventivo_id']} - {r['ragione_sociale']}", axis=1)
+        df_ore_comp_vis["Stato"] = df_ore_comp["stato"]
+        df_ore_comp_vis["Valore Ordine"] = df_ore_comp["prezzo_totale"].apply(lambda x: f"{x:,.2f} €")
+        df_ore_comp_vis["Ore Stimate"] = df_ore_comp["ore_previste"].apply(lambda x: f"{x:.1f} h")
+        df_ore_comp_vis["Ore Effettive"] = df_ore_comp["ore_effettive"].apply(lambda x: f"{x:.1f} h")
+        df_ore_comp_vis["Differenza"] = df_ore_comp["differenza"].apply(lambda x: f"{x:+.1f} h")
+        df_ore_comp_vis["Esito"] = df_ore_comp["differenza"].apply(
+            lambda x: "🟢 In orario / Risparmio" if x > 0 else ("🔴 Extra Ore Utilizzate" if x < 0 else "⚪ In perfettamente il linea")
+        )
+        
+        st.dataframe(df_ore_comp_vis, hide_index=True, use_container_width=True)
+
+    st.markdown("---")
+    
+    # 3. Analisi Incassi e Produttività
+    st.markdown("### 📈 Analisi Incassi e Produttività")
     f_rep1, f_rep2, f_rep3, f_rep4 = st.columns(4)
     
     y_rep_opts = ["Tutti"] + [str(y) for y in range(2023, 2030)]
@@ -776,7 +874,6 @@ with tab_rep:
     op_opts = ["Tutti"] + op_df['operatore'].tolist() if not op_df.empty else ["Tutti"]
     sel_rop = f_rep4.selectbox("Operatore", op_opts)
 
-    # Base Filter per ordini (Incassi limitati agli ordini Completati nel periodo)
     q_incassi = "SELECT COALESCE(SUM(prezzo_totale), 0) FROM public.preventivi WHERE stato = 'Completato'"
     p_inc = {}
     if sel_ry != "Tutti":
@@ -787,9 +884,8 @@ with tab_rep:
         p_inc["m"] = int(sel_rm)
     
     tot_incassi = pd.read_sql(q_incassi, engine, params=p_inc).iloc[0, 0]
-    st.metric(f"Totale Incassi Ordini Completati (Periodo Selezionato)", f"{tot_incassi:,.2f} €")
+    st.metric("Totale Incassi Ordini Completati", f"{tot_incassi:,.2f} €")
 
-    # Query Produttività (Ore Effettive vs Previste)
     q_ore = """
         SELECT s.nome as Settore, 
                COALESCE(o.nome, 'N/D') as Operatore,
