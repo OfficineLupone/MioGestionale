@@ -142,17 +142,23 @@ def init_db():
             );
         """))
 
-        # 8. Lavorazioni ed Ore Effettive
+        # 8. Ore lavorate
         conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS public.lavorazioni (
+            CREATE TABLE IF NOT EXISTS public.ore_lavorate (
                 id SERIAL PRIMARY KEY,
-                preventivo_id INTEGER REFERENCES public.preventivi(id) ON DELETE CASCADE,
-                settore_id INTEGER REFERENCES public.settori(id) ON DELETE SET NULL,
-                operatore_id INTEGER REFERENCES public.operatori(id) ON DELETE SET NULL,
-                ore_effettive NUMERIC(8, 2) DEFAULT 0.0,
-                note TEXT,
-                data_registrazione TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                preventivo_id INT REFERENCES public.preventivi(id) ON DELETE CASCADE,
+                prodotto_id INT REFERENCES public.prodotti(id) ON DELETE CASCADE,
+                settore_id INT REFERENCES public.settori(id) ON DELETE CASCADE,
+                operatore_id INT REFERENCES public.operatori(id) ON DELETE SET NULL,
+                data_lavorazione DATE NOT NULL,
+                ore NUMERIC(10,2) NOT NULL DEFAULT 0.0
             );
+        """))
+
+        # Migrazione se la colonna prodotto_id mancava in ore_lavorate
+        conn.execute(text("""
+            ALTER TABLE public.ore_lavorate 
+            ADD COLUMN IF NOT EXISTS prodotto_id INT REFERENCES public.prodotti(id) ON DELETE CASCADE;
         """))
 
         # Indici per ottimizzare la velocità delle query frequenti
@@ -160,3 +166,4 @@ def init_db():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_preventivi_stato ON public.preventivi(stato);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_prev_dettagli_prev ON public.preventivo_dettagli(preventivo_id);"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ore_lavorate_prev ON public.ore_lavorate(preventivo_id);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_ore_lavorate_prod ON public.ore_lavorate(prodotto_id);"))
