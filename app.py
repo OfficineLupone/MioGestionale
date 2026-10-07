@@ -62,15 +62,19 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-    /* Nasconde l'header superiore di Streamlit (stelle, matita, GitHub) */
+    /* Nasconde l'header superiore di Streamlit */
     header[data-testid="stHeader"] {
         visibility: hidden;
         height: 0%;
     }
     
-    /* Nasconde il footer 'Made with Streamlit' */
-    footer {
-        visibility: hidden;
+    /* Nasconde il menu principale e il footer di Streamlit */
+    #MainMenu { visibility: hidden; }
+    footer { visibility: hidden; }
+    
+    /* Nasconde i pulsanti di ancoraggio (icona link) vicino ai titoli */
+    .stHeadingWithActionElements a {
+        display: none !important;
     }
     
     /* Riduce lo spazio vuoto in alto rimasto dopo aver nascosto l'header */
