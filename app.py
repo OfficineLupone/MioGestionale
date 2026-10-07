@@ -982,25 +982,52 @@ with tab_rep:
                     else:
                         st.caption("Nessuna ora stimata impostata per i prodotti di questo preventivo.")
 
-                # Dettaglio Ore Effettive per Settore
-                with col_det_eff:
-                    st.markdown("#### ⏱️ Dettaglio Ore Effettive (per Settore)")
-                    q_det_effettive = """
-                        SELECT s.nome as Settore, SUM(ol.ore) as Ore_Effettive
-                        FROM public.ore_lavorate ol
-                        JOIN public.settori s ON ol.settore_id = s.id
-                        WHERE ol.preventivo_id = %(pid)s
-                        GROUP BY s.nome
-                        ORDER BY s.nome
-                    """
-                    df_det_effec = pd.read_sql(q_det_effettive, engine, params={"pid": p_id_eff})
-                    if not df_det_effec.empty:
-                        df_det_effec['Ore_Effettive'] = df_det_effec['Ore_Effettive'].apply(lambda x: f"{x:.1f} h")
-                        st.dataframe(df_det_effec, hide_index=True, use_container_width=True)
-                    else:
-                        st.caption("Nessuna ora effettiva ancora registrata per questo preventivo.")
+               # Dettaglio Ore Stimate per Settore
+with col_det_prev:
+    st.markdown("#### 📋 Dettaglio Ore Stimate (per Settore)")
+    q_det_stimate = """
+        SELECT s.nome AS "Settore", SUM(pd.quantita * COALESCE(pos.ore, 0)) AS "Ore_Stimate"
+        FROM public.preventivo_dettagli pd
+        JOIN public.prodotto_ore_settori pos ON pd.prodotto_id = pos.prodotto_id
+        JOIN public.settori s ON pos.settore_id = s.id
+        WHERE pd.preventivo_id = %(pid)s
+        GROUP BY s.nome
+        ORDER BY s.nome
+    """
+    df_det_stim = pd.read_sql(q_det_stimate, engine, params={"pid": p_id_eff})
+    
+    # Normalizza i nomi delle colonne in minuscolo per evitare errori di case-sensitivity
+    df_det_stim.columns = [c.lower() for c in df_det_stim.columns]
+    
+    if not df_det_stim.empty and 'ore_stimate' in df_det_stim.columns:
+        df_det_stim['ore_stimate'] = df_det_stim['ore_stimate'].apply(lambda x: f"{x:.1f} h")
+        df_det_stim = df_det_stim.rename(columns={'settore': 'Settore', 'ore_stimate': 'Ore Stimate'})
+        st.dataframe(df_det_stim, hide_index=True, use_container_width=True)
+    else:
+        st.caption("Nessuna ora stimata impostata per i prodotti di questo preventivo.")
 
-    st.markdown("---")
+# Dettaglio Ore Effettive per Settore
+with col_det_eff:
+    st.markdown("#### ⏱️ Dettaglio Ore Effettive (per Settore)")
+    q_det_effettive = """
+        SELECT s.nome AS "Settore", SUM(ol.ore) AS "Ore_Effettive"
+        FROM public.ore_lavorate ol
+        JOIN public.settori s ON ol.settore_id = s.id
+        WHERE ol.preventivo_id = %(pid)s
+        GROUP BY s.nome
+        ORDER BY s.nome
+    """
+    df_det_effec = pd.read_sql(q_det_effettive, engine, params={"pid": p_id_eff})
+    
+    # Normalizza i nomi delle colonne in minuscolo
+    df_det_effec.columns = [c.lower() for c in df_det_effec.columns]
+    
+    if not df_det_effec.empty and 'ore_effettive' in df_det_effec.columns:
+        df_det_effec['ore_effettive'] = df_det_effec['ore_effettive'].apply(lambda x: f"{x:.1f} h")
+        df_det_effec = df_det_effec.rename(columns={'settore': 'Settore', 'ore_effettive': 'Ore Effettive'})
+        st.dataframe(df_det_effec, hide_index=True, use_container_width=True)
+    else:
+        st.caption("Nessuna ora effettiva ancora registrata per questo preventivo.")
     
     # 3. Analisi Incassi e Produttività
     st.markdown("### 📈 Analisi Incassi e Produttività")
