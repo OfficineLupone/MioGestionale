@@ -205,7 +205,9 @@ def genera_pdf_preventivo(id_preventivo, ragione_sociale, citta, provincia, cap,
         p_name = str(art['prodotto'])[:48]
         pdf.cell(95, 8, f" {p_name}", border=1, fill=True)
         pdf.cell(20, 8, str(art['quantita']), border=1, align='C', fill=True)
-        pdf.cell(35, 8, f"{art['prezzo_unitario']:,.2f}", border=1, align='R', fill=True)
+        # Protezione per prezzo unitario in caso manchi
+        pu = art.get('prezzo_unitario') or 0.0
+        pdf.cell(35, 8, f"{pu:,.2f}", border=1, align='R', fill=True)
         pdf.cell(40, 8, f"{art['prezzo_totale']:,.2f}", border=1, align='R', fill=True)
         pdf.ln()
         fill_bg = not fill_bg
@@ -658,8 +660,25 @@ with tab_prev:
                             conn.execute(text("UPDATE public.preventivi SET stato=:st WHERE id=:id"), {"st": nuovo_st, "id": int(r_prev['id'])})
                         st.rerun()
 
-                df_det = pd.read_sql("SELECT pr.nome as Prodotto, pd.quantita as Qta, pd.prezzo_totale as Totale FROM public.preventivo_dettagli pd JOIN public.prodotti pr ON pd.prodotto_id = pr.id WHERE pd.preventivo_id = %(pid)s", engine, params={"pid": int(r_prev['id'])})
-                st.dataframe(df_det, hide_index=True, use_container_width=True)
+                # Query corretta: recuperiamo le chiavi esatte che servono al PDF e poi rinominiamo solo per la UI
+                df_det = pd.read_sql("""
+                    SELECT pr.nome as prodotto, 
+                           pd.quantita as quantita, 
+                           pd.prezzo_unitario as prezzo_unitario, 
+                           pd.prezzo_totale as prezzo_totale 
+                    FROM public.preventivo_dettagli pd 
+                    JOIN public.prodotti pr ON pd.prodotto_id = pr.id 
+                    WHERE pd.preventivo_id = %(pid)s
+                """, engine, params={"pid": int(r_prev['id'])})
+                
+                # Rinominiamo le colonne solo per la visualizzazione sulla pagina web in modo da farle belle
+                df_visiva = df_det.rename(columns={
+                    'prodotto': 'Prodotto',
+                    'quantita': 'Q.tà',
+                    'prezzo_unitario': 'Prezzo Unit. (€)',
+                    'prezzo_totale': 'Totale (€)'
+                })
+                st.dataframe(df_visiva, hide_index=True, use_container_width=True)
 
                 pdf_bytes = genera_pdf_preventivo(r_prev['id'], r_prev['ragione_sociale'], r_prev['citta'], r_prev['provincia'], r_prev['cap'], r_prev['piva'], r_prev['data_creazione'].strftime("%d/%m/%Y"), df_det.to_dict('records'), r_prev['prezzo_totale'])
                 st.download_button("📄 PDF", data=pdf_bytes, file_name=f"Prev_{r_prev['id']}.pdf", mime="application/pdf", key=f"dl_pdf_{r_prev['id']}")
