@@ -963,25 +963,6 @@ with tab_rep:
             with st.expander(f"Preventivo #{p_id_eff} - {r_eff['ragione_sociale']} | Stimate: {r_eff['ore_previste']:.1f}h | Effettive: {r_eff['ore_effettive']:.1f}h | Diff: {diff_val:+.1f}h ({esito_str})"):
                 col_det_prev, col_det_eff = st.columns(2)
                 
-                # Dettaglio Ore Stimate per Settore
-                with col_det_prev:
-                    st.markdown("#### 📋 Dettaglio Ore Stimate (per Settore)")
-                    q_det_stimate = """
-                        SELECT s.nome as Settore, SUM(pd.quantita * COALESCE(pos.ore, 0)) as Ore_Stimate
-                        FROM public.preventivo_dettagli pd
-                        JOIN public.prodotto_ore_settori pos ON pd.prodotto_id = pos.prodotto_id
-                        JOIN public.settori s ON pos.settore_id = s.id
-                        WHERE pd.preventivo_id = %(pid)s
-                        GROUP BY s.nome
-                        ORDER BY s.nome
-                    """
-                    df_det_stim = pd.read_sql(q_det_stimate, engine, params={"pid": p_id_eff})
-                    if not df_det_stim.empty:
-                        df_det_stim['Ore_Stimate'] = df_det_stim['Ore_Stimate'].apply(lambda x: f"{x:.1f} h")
-                        st.dataframe(df_det_stim, hide_index=True, use_container_width=True)
-                    else:
-                        st.caption("Nessuna ora stimata impostata per i prodotti di questo preventivo.")
-
                # Dettaglio Ore Stimate per Settore
 with col_det_prev:
     st.markdown("#### 📋 Dettaglio Ore Stimate (per Settore)")
