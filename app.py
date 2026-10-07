@@ -152,22 +152,22 @@ def genera_pdf_preventivo(id_preventivo, ragione_sociale, citta, provincia, cap,
     pdf.add_page()
     pdf.set_font("Helvetica", 'B', 14)
     pdf.set_text_color(11, 60, 45)
-    pdf.cell(100, 6, "GESTIONALE LUPONE S.R.L.", ln=False)
+    pdf.cell(100, 6, "OFFICINE LUPONE S.R.L.", ln=False)
     pdf.set_font("Helvetica", 'B', 9)
     pdf.set_text_color(100, 100, 100)
     pdf.cell(90, 5, "Spett.le Cliente:", ln=True, align='R')
     pdf.set_font("Helvetica", size=9)
     pdf.set_text_color(60, 60, 60)
-    pdf.cell(100, 5, "Via dell'Industria, 45 - 20100 Milano (MI)", ln=False)
+    pdf.cell(100, 5, "Viale Michelangelo, 74 - 80020 Casavatore (NA)", ln=False)
     pdf.set_font("Helvetica", 'B', 11)
     pdf.set_text_color(17, 24, 39)
     pdf.cell(90, 5, str(ragione_sociale), ln=True, align='R')
     pdf.set_font("Helvetica", size=9)
     pdf.set_text_color(80, 80, 80)
-    pdf.cell(100, 5, "P.IVA: 01234567890 | info@enterprise.it", ln=False)
+    pdf.cell(100, 5, "P.IVA: 035461111216 | officine.luponesrl@cert.telecompec.it", ln=False)
     loc_str = f"{citta or ''} ({provincia or ''}) {cap or ''}".strip()
     pdf.cell(90, 5, loc_str if loc_str else "-", ln=True, align='R')
-    pdf.cell(100, 5, "Tel: +39 02 1234567", ln=False)
+    pdf.cell(100, 5, "Tel: +39 0817360419", ln=False)
     piva_str = f"P.IVA / C.F.: {piva}" if piva else ""
     pdf.cell(90, 5, piva_str, ln=True, align='R')
     pdf.ln(10)
@@ -327,7 +327,7 @@ with tab_aziende:
         df_az = load_aziende()
 
     if df_az.empty:
-        st.info("Nessunaazienda trovata.")
+        st.info("Nessuna azienda trovata.")
     else:
         for _, row in df_az.iterrows():
             c_info, c_actions = st.columns([3, 3])
@@ -412,7 +412,7 @@ with tab_aziende:
             st.write("")
 
 # ---------------------------------------------------------
-# 3. SETTORI E OPERATORI (Interfaccia Grafica Moderna)
+# 3. SETTORI E OPERATORI (Organigramma con Modifica/Elimina)
 # ---------------------------------------------------------
 with tab_settori_op:
     st.subheader("Gestione Settori & Operatori")
@@ -457,11 +457,53 @@ with tab_settori_op:
         for idx, s_row in df_settori.iterrows():
             with grid_cols[idx % 3]:
                 with st.container(border=True):
-                    st.markdown(f"#### 🏢 {s_row['nome']}")
+                    head_c1, head_c2, head_c3 = st.columns([3, 1, 1])
+                    head_c1.markdown(f"#### 🏢 {s_row['nome']}")
+                    
+                    # Modifica Settore
+                    with head_c2.popover("✏️"):
+                        with st.form(f"mod_sec_{s_row['id']}", clear_on_submit=True):
+                            new_sec_name = st.text_input("Nome Settore", value=s_row['nome'])
+                            if st.form_submit_button("💾 Salva"):
+                                with engine.begin() as conn:
+                                    conn.execute(text("UPDATE public.settori SET nome = :n WHERE id = :id"), {"n": new_sec_name.strip(), "id": int(s_row['id'])})
+                                st.cache_data.clear()
+                                st.rerun()
+
+                    # Elimina Settore
+                    if head_c3.button("🗑️", key=f"del_sec_{s_row['id']}"):
+                        with engine.begin() as conn:
+                            conn.execute(text("DELETE FROM public.settori WHERE id = :id"), {"id": int(s_row['id'])})
+                        st.cache_data.clear()
+                        st.rerun()
+
                     ops_in_sett = df_op_list[df_op_list['settore_id'] == s_row['id']] if not df_op_list.empty else pd.DataFrame()
                     if not ops_in_sett.empty:
                         for _, op_r in ops_in_sett.iterrows():
-                            st.markdown(f"• 👤 **{op_r['operatore']}**")
+                            op_c1, op_c2, op_c3 = st.columns([3, 1, 1])
+                            op_c1.markdown(f"• 👤 **{op_r['operatore']}**")
+                            
+                            # Modifica Operatore
+                            with op_c2.popover("✏️"):
+                                with st.form(f"mod_op_{op_r['id']}", clear_on_submit=True):
+                                    new_op_name = st.text_input("Nome Operatore", value=op_r['operatore'])
+                                    sett_names = df_settori['nome'].tolist()
+                                    curr_idx = sett_names.index(s_row['nome']) if s_row['nome'] in sett_names else 0
+                                    new_op_sett = st.selectbox("Settore", sett_names, index=curr_idx)
+                                    if st.form_submit_button("💾 Salva"):
+                                        target_sid = df_settori[df_settori['nome'] == new_op_sett]['id'].values[0]
+                                        with engine.begin() as conn:
+                                            conn.execute(text("UPDATE public.operatori SET nome = :n, settore_id = :sid WHERE id = :id"),
+                                                         {"n": new_op_name.strip(), "sid": int(target_sid), "id": int(op_r['id'])})
+                                        st.cache_data.clear()
+                                        st.rerun()
+
+                            # Elimina Operatore
+                            if op_c3.button("🗑️", key=f"del_op_{op_r['id']}"):
+                                with engine.begin() as conn:
+                                    conn.execute(text("DELETE FROM public.operatori WHERE id = :id"), {"id": int(op_r['id'])})
+                                st.cache_data.clear()
+                                st.rerun()
                     else:
                         st.caption("Nessun operatore in questo settore.")
 
@@ -532,7 +574,6 @@ with tab_prodotti:
         for _, pr_row in df_prod_all.iterrows():
             cp_info, cp_act = st.columns([4, 2])
             with cp_info:
-                # Visualizzazione estesa nel catalogo: ID, Nome, Formato, Disegno, Materiale, Prezzo
                 fmt_str = f" | Formato: `{pr_row['macchina_gruppo_formato']}`" if pr_row.get('macchina_gruppo_formato') else ""
                 dis_str = f" | Disegno: `{pr_row['disegno']}`" if pr_row.get('disegno') else ""
                 mat_str = f" | Materiale: `{pr_row['materiale_trattamento']}`" if pr_row.get('materiale_trattamento') else ""
@@ -697,14 +738,68 @@ with tab_prev:
         df_prev_list = pd.read_sql(query_prev, engine, params=params_p)
 
         for _, r_prev in df_prev_list.iterrows():
-            with st.expander(f"Preventivo N. {r_prev['id']} - {r_prev['ragione_sociale']} ({r_prev['prezzo_totale']:,.2f} €) - [{r_prev['stato']}]"):
-                c_s1, _ = st.columns([2, 2])
+            prev_id_val = int(r_prev['id'])
+            with st.expander(f"Preventivo N. {prev_id_val} - {r_prev['ragione_sociale']} ({r_prev['prezzo_totale']:,.2f} €) - [{r_prev['stato']}]"):
+                c_s1, c_s2, c_s3 = st.columns([2, 1, 1])
+                
+                # Modifica Stato
                 with c_s1:
                     stati_possibili = ["Bozza", "Accettato", "In lavorazione", "Completato", "Annullato"]
-                    nuovo_st = st.selectbox("Cambia Stato", stati_possibili, index=stati_possibili.index(r_prev['stato']), key=f"st_sel_{r_prev['id']}")
-                    if st.button("Aggiorna", key=f"btn_upd_st_{r_prev['id']}"):
+                    nuovo_st = st.selectbox("Cambia Stato", stati_possibili, index=stati_possibili.index(r_prev['stato']), key=f"st_sel_{prev_id_val}")
+                    if st.button("Aggiorna Stato", key=f"btn_upd_st_{prev_id_val}"):
                         with engine.begin() as conn:
-                            conn.execute(text("UPDATE public.preventivi SET stato=:st WHERE id=:id"), {"st": nuovo_st, "id": int(r_prev['id'])})
+                            conn.execute(text("UPDATE public.preventivi SET stato=:st WHERE id=:id"), {"st": nuovo_st, "id": prev_id_val})
+                        st.rerun()
+
+                # Modifica Articoli Preventivo in Corso d'Opera
+                with c_s2.popover("✏️ Modifica Articoli"):
+                    st.markdown(f"#### Modifica Preventivo #{prev_id_val}")
+                    df_det_edit = pd.read_sql("""
+                        SELECT pd.id, pd.prodotto_id, pr.nome, pd.quantita, pd.prezzo_unitario, pd.prezzo_totale
+                        FROM public.preventivo_dettagli pd
+                        JOIN public.prodotti pr ON pd.prodotto_id = pr.id
+                        WHERE pd.preventivo_id = %(pid)s
+                    """, engine, params={"pid": prev_id_val})
+
+                    st.markdown("**Articoli attuali:**")
+                    for _, d_row in df_det_edit.iterrows():
+                        r_col1, r_col2 = st.columns([3, 1])
+                        r_col1.write(f"• {d_row['nome']} (x{d_row['quantita']}) - {d_row['prezzo_totale']:,.2f} €")
+                        if r_col2.button("❌", key=f"del_det_{d_row['id']}"):
+                            with engine.begin() as conn:
+                                conn.execute(text("DELETE FROM public.preventivo_dettagli WHERE id = :id"), {"id": int(d_row['id'])})
+                                # Ricalcola totale preventivo
+                                new_tot = conn.execute(text("SELECT COALESCE(SUM(prezzo_totale),0) FROM public.preventivo_dettagli WHERE preventivo_id = :pid"), {"pid": prev_id_val}).fetchone()[0]
+                                conn.execute(text("UPDATE public.preventivi SET prezzo_totale = :tot WHERE id = :pid"), {"tot": float(new_tot), "pid": prev_id_val})
+                            st.rerun()
+
+                    st.markdown("---")
+                    st.markdown("**Aggiungi Prodotto:**")
+                    all_p_opts = load_prodotti()
+                    if not all_p_opts.empty:
+                        with st.form(f"add_p_to_prev_{prev_id_val}", clear_on_submit=True):
+                            add_p_sel = st.selectbox("Seleziona Prodotto", all_p_opts['nome'].tolist())
+                            add_q_sel = st.number_input("Quantità", min_value=1, value=1)
+                            if st.form_submit_button("➕ Aggiungi Prodotto"):
+                                p_row_sel = all_p_opts[all_p_opts['nome'] == add_p_sel].iloc[0]
+                                pu_val = float(p_row_sel['prezzo_vendita'])
+                                pt_val = pu_val * int(add_q_sel)
+                                with engine.begin() as conn:
+                                    conn.execute(text("""
+                                        INSERT INTO public.preventivo_dettagli (preventivo_id, prodotto_id, quantita, prezzo_unitario, prezzo_totale)
+                                        VALUES (:pid, :prid, :q, :pu, :pt)
+                                    """), {"pid": prev_id_val, "prid": int(p_row_sel['id']), "q": int(add_q_sel), "pu": pu_val, "pt": pt_val})
+                                    new_tot = conn.execute(text("SELECT COALESCE(SUM(prezzo_totale),0) FROM public.preventivo_dettagli WHERE preventivo_id = :pid"), {"pid": prev_id_val}).fetchone()[0]
+                                    conn.execute(text("UPDATE public.preventivi SET prezzo_totale = :tot WHERE id = :pid"), {"tot": float(new_tot), "pid": prev_id_val})
+                                st.rerun()
+
+                # Elimina Intero Preventivo
+                with c_s3:
+                    if st.button("🗑️ Elimina", key=f"del_prev_{prev_id_val}"):
+                        with engine.begin() as conn:
+                            conn.execute(text("DELETE FROM public.preventivo_dettagli WHERE preventivo_id = :pid"), {"pid": prev_id_val})
+                            conn.execute(text("DELETE FROM public.ore_lavorate WHERE preventivo_id = :pid"), {"pid": prev_id_val})
+                            conn.execute(text("DELETE FROM public.preventivi WHERE id = :pid"), {"pid": prev_id_val})
                         st.rerun()
 
                 df_det = pd.read_sql("""
@@ -715,7 +810,7 @@ with tab_prev:
                     FROM public.preventivo_dettagli pd 
                     JOIN public.prodotti pr ON pd.prodotto_id = pr.id 
                     WHERE pd.preventivo_id = %(pid)s
-                """, engine, params={"pid": int(r_prev['id'])})
+                """, engine, params={"pid": prev_id_val})
                 
                 df_visiva = df_det.copy()
                 df_visiva['prezzo_unitario'] = df_visiva['prezzo_unitario'].apply(lambda x: f"{x:,.2f} €")
@@ -732,7 +827,7 @@ with tab_prev:
                 st.download_button("📄 Download PDF", data=pdf_bytes, file_name=f"Prev_{r_prev['id']}.pdf", mime="application/pdf", key=f"dl_pdf_{r_prev['id']}")
 
 # ---------------------------------------------------------
-# 6. LAVORAZIONE
+# 6. LAVORAZIONE (Con Cambia Stato e Ritorno in Preventivi / Elimina)
 # ---------------------------------------------------------
 with tab_lav:
     st.subheader("Ordini in Lavorazione")
@@ -745,12 +840,12 @@ with tab_lav:
     else:
         for _, r_lav in df_ord_lav.iterrows():
             p_id = int(r_lav['preventivo_id'])
-            col_inf, col_btn1, col_btn2, col_btn3 = st.columns([2.5, 1.2, 1.1, 1.2])
+            col_inf, col_btn1, col_btn2, col_btn_st, col_btn3, col_btn_del = st.columns([2.2, 1.2, 1.0, 1.3, 1.1, 0.8])
             
             with col_inf:
                 st.markdown(f"**Ordine #{p_id}** - {r_lav['ragione_sociale']} (`{r_lav['prezzo_totale']:,.2f} €`)")
             
-            with col_btn1.popover("⏱️ Registra Ore"):
+            with col_btn1.popover("⏱️ Ore"):
                 df_prod_in_prev = pd.read_sql("SELECT pd.prodotto_id, pr.nome FROM public.preventivo_dettagli pd JOIN public.prodotti pr ON pd.prodotto_id = pr.id WHERE pd.preventivo_id = %(pid)s", engine, params={"pid": p_id})
                 if not df_prod_in_prev.empty:
                     with st.form(f"form_reg_ore_{p_id}", clear_on_submit=True):
@@ -784,14 +879,33 @@ with tab_lav:
                 df_det_ore = pd.read_sql("SELECT ol.data_lavorazione as Data, pr.nome as Prodotto, s.nome as Settore, o.nome as Operatore, ol.ore as Ore FROM public.ore_lavorate ol JOIN public.settori s ON ol.settore_id = s.id LEFT JOIN public.prodotti pr ON ol.prodotto_id = pr.id LEFT JOIN public.operatori o ON ol.operatore_id = o.id WHERE ol.preventivo_id = %(pid)s", engine, params={"pid": p_id})
                 st.dataframe(df_det_ore, hide_index=True, use_container_width=True)
 
+            # Modifica Stato (Bozza, Accettato, Annullato -> Sposta di nuovo nella sezione Preventivi)
+            with col_btn_st.popover("🔄 Cambia Stato"):
+                stati_lav = ["Bozza", "Accettato", "Annullato"]
+                sel_st_lav = st.selectbox("Nuovo Stato", stati_lav, key=f"ch_st_lav_{p_id}")
+                if st.button("Conferma Spostamento", key=f"btn_st_lav_{p_id}"):
+                    with engine.begin() as conn:
+                        conn.execute(text("UPDATE public.preventivi SET stato = :st WHERE id = :pid"), {"st": sel_st_lav, "pid": p_id})
+                    st.success(f"Ordine #{p_id} spostato in '{sel_st_lav}' (Sezione Preventivi)")
+                    st.rerun()
+
             with col_btn3:
                 if st.button("✅ Completa", key=f"comp_{p_id}"):
                     with engine.begin() as conn:
                         conn.execute(text("UPDATE public.preventivi SET stato = 'Completato' WHERE id = :pid"), {"pid": p_id})
                     st.rerun()
 
+            # Elimina Ordine Lavorazione
+            with col_btn_del:
+                if st.button("🗑️", key=f"del_lav_{p_id}"):
+                    with engine.begin() as conn:
+                        conn.execute(text("DELETE FROM public.preventivo_dettagli WHERE preventivo_id = :pid"), {"pid": p_id})
+                        conn.execute(text("DELETE FROM public.ore_lavorate WHERE preventivo_id = :pid"), {"pid": p_id})
+                        conn.execute(text("DELETE FROM public.preventivi WHERE id = :pid"), {"pid": p_id})
+                    st.rerun()
+
 # ---------------------------------------------------------
-# 7. REPORT AVANZATO
+# 7. REPORT AVANZATO (Con Dettaglio Settori per Ore Stimate ed Effettive)
 # ---------------------------------------------------------
 with tab_rep:
     st.subheader("Report e Analisi Aziendale")
@@ -807,7 +921,7 @@ with tab_rep:
 
     st.markdown("---")
 
-    # 2. Resoconto Ore Preventivate vs Ore Effettive Lavorate
+    # 2. Resoconto Ore Preventivate vs Ore Effettive Lavorate con Dettaglio Settori
     st.markdown("### ⏱️ Resoconto Efficienza Lavorazioni (Ore Previste vs Ore Effettive)")
     
     q_confronto_ore = """
@@ -841,18 +955,50 @@ with tab_rep:
     if df_ore_comp.empty:
         st.info("Nessun dato relativo ad ordini o lavorazioni confermate.")
     else:
-        df_ore_comp_vis = pd.DataFrame()
-        df_ore_comp_vis["Preventivo"] = df_ore_comp.apply(lambda r: f"#{r['preventivo_id']} - {r['ragione_sociale']}", axis=1)
-        df_ore_comp_vis["Stato"] = df_ore_comp["stato"]
-        df_ore_comp_vis["Valore Ordine"] = df_ore_comp["prezzo_totale"].apply(lambda x: f"{x:,.2f} €")
-        df_ore_comp_vis["Ore Stimate"] = df_ore_comp["ore_previste"].apply(lambda x: f"{x:.1f} h")
-        df_ore_comp_vis["Ore Effettive"] = df_ore_comp["ore_effettive"].apply(lambda x: f"{x:.1f} h")
-        df_ore_comp_vis["Differenza"] = df_ore_comp["differenza"].apply(lambda x: f"{x:+.1f} h")
-        df_ore_comp_vis["Esito"] = df_ore_comp["differenza"].apply(
-            lambda x: "🟢 In orario / Risparmio" if x > 0 else ("🔴 Extra Ore Utilizzate" if x < 0 else "⚪ In perfettamente il linea")
-        )
-        
-        st.dataframe(df_ore_comp_vis, hide_index=True, use_container_width=True)
+        for _, r_eff in df_ore_comp.iterrows():
+            p_id_eff = int(r_eff['preventivo_id'])
+            diff_val = r_eff['differenza']
+            esito_str = "🟢 In orario / Risparmio" if diff_val > 0 else ("🔴 Extra Ore Utilizzate" if diff_val < 0 else "⚪ In linea")
+            
+            with st.expander(f"Preventivo #{p_id_eff} - {r_eff['ragione_sociale']} | Stimate: {r_eff['ore_previste']:.1f}h | Effettive: {r_eff['ore_effettive']:.1f}h | Diff: {diff_val:+.1f}h ({esito_str})"):
+                col_det_prev, col_det_eff = st.columns(2)
+                
+                # Dettaglio Ore Stimate per Settore
+                with col_det_prev:
+                    st.markdown("#### 📋 Dettaglio Ore Stimate (per Settore)")
+                    q_det_stimate = """
+                        SELECT s.nome as Settore, SUM(pd.quantita * COALESCE(pos.ore, 0)) as Ore_Stimate
+                        FROM public.preventivo_dettagli pd
+                        JOIN public.prodotto_ore_settori pos ON pd.prodotto_id = pos.prodotto_id
+                        JOIN public.settori s ON pos.settore_id = s.id
+                        WHERE pd.preventivo_id = %(pid)s
+                        GROUP BY s.nome
+                        ORDER BY s.nome
+                    """
+                    df_det_stim = pd.read_sql(q_det_stimate, engine, params={"pid": p_id_eff})
+                    if not df_det_stim.empty:
+                        df_det_stim['Ore_Stimate'] = df_det_stim['Ore_Stimate'].apply(lambda x: f"{x:.1f} h")
+                        st.dataframe(df_det_stim, hide_index=True, use_container_width=True)
+                    else:
+                        st.caption("Nessuna ora stimata impostata per i prodotti di questo preventivo.")
+
+                # Dettaglio Ore Effettive per Settore
+                with col_det_eff:
+                    st.markdown("#### ⏱️ Dettaglio Ore Effettive (per Settore)")
+                    q_det_effettive = """
+                        SELECT s.nome as Settore, SUM(ol.ore) as Ore_Effettive
+                        FROM public.ore_lavorate ol
+                        JOIN public.settori s ON ol.settore_id = s.id
+                        WHERE ol.preventivo_id = %(pid)s
+                        GROUP BY s.nome
+                        ORDER BY s.nome
+                    """
+                    df_det_effec = pd.read_sql(q_det_effettive, engine, params={"pid": p_id_eff})
+                    if not df_det_effec.empty:
+                        df_det_effec['Ore_Effettive'] = df_det_effec['Ore_Effettive'].apply(lambda x: f"{x:.1f} h")
+                        st.dataframe(df_det_effec, hide_index=True, use_container_width=True)
+                    else:
+                        st.caption("Nessuna ora effettiva ancora registrata per questo preventivo.")
 
     st.markdown("---")
     
