@@ -25,7 +25,6 @@ def run_db_init():
             conn.execute(text("ALTER TABLE public.aziende ADD COLUMN IF NOT EXISTS provincia TEXT;"))
             conn.execute(text("ALTER TABLE public.aziende ADD COLUMN IF NOT EXISTS cap TEXT;"))
             conn.execute(text("ALTER TABLE public.prodotti ADD COLUMN IF NOT EXISTS note TEXT;"))
-            # Colonne per la gestione dei file allegati (Disegni PDF / Immagini)
             conn.execute(text("ALTER TABLE public.prodotti ADD COLUMN IF NOT EXISTS disegno_file_data BYTEA;"))
             conn.execute(text("ALTER TABLE public.prodotti ADD COLUMN IF NOT EXISTS disegno_file_name TEXT;"))
             conn.execute(text("ALTER TABLE public.prodotti ADD COLUMN IF NOT EXISTS disegno_file_mime TEXT;"))
@@ -34,7 +33,7 @@ def run_db_init():
 
 run_db_init()
 
-# Funzioni di fetch caching
+# Funzioni di fetch caching ottimizzate
 @st.cache_data(ttl=60)
 def load_settori():
     engine = get_db_engine()
@@ -54,10 +53,22 @@ def load_aziende():
     engine = get_db_engine()
     return pd.read_sql("SELECT * FROM public.aziende ORDER BY ragione_sociale", engine)
 
-@st.cache_data(ttl=60)
+# OTTIMIZZAZIONE: Carica solo i metadati dei prodotti, SENZA i byte pesanti del file binario
+@st.cache_data(ttl=30)
 def load_prodotti():
     engine = get_db_engine()
-    return pd.read_sql("SELECT * FROM public.prodotti ORDER BY nome", engine)
+    return pd.read_sql("""
+        SELECT id, nome, macchina_gruppo_formato, disegno, materiale_trattamento, 
+               costo_interno, prezzo_vendita, note, disegno_file_name, disegno_file_mime 
+        FROM public.prodotti ORDER BY nome
+    """, engine)
+
+# Funzione per recuperare i byte del file ON-DEMAND solo al click del download
+def get_file_bytes(prodotto_id):
+    engine = get_db_engine()
+    with engine.begin() as conn:
+        res = conn.execute(text("SELECT disegno_file_data FROM public.prodotti WHERE id = :id"), {"id": prodotto_id}).fetchone()
+        return res[0] if res else None
 
 # =========================================================
 # STILE GRAFICO PERSONALIZZATO E MODERNO
@@ -66,22 +77,15 @@ st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-    /* Nasconde l'header superiore di Streamlit */
     header[data-testid="stHeader"] {
         visibility: hidden;
         height: 0%;
     }
-    
-    /* Nasconde il menu principale e il footer di Streamlit */
     #MainMenu { visibility: hidden; }
     footer { visibility: hidden; }
-    
-    /* Nasconde i pulsanti di ancoraggio (icona link) vicino ai titoli */
     .stHeadingWithActionElements a {
         display: none !important;
     }
-    
-    /* Riduce lo spazio vuoto in alto rimasto dopo aver nascosto l'header */
     .block-container {
         padding-top: 1rem !important;
     }
@@ -92,7 +96,6 @@ st.markdown("""
         color: #111827 !important;
     }
 
-    /* Header */
     .brand-header {
         display: flex;
         align-items: center;
@@ -114,7 +117,6 @@ st.markdown("""
         font-size: 20px;
     }
     
-    /* Design Tabelle Streamlit */
     [data-testid="stDataFrame"] > div {
         border-radius: 8px;
         overflow: hidden;
@@ -132,7 +134,6 @@ st.markdown("""
         color: #1F2937 !important;
     }
 
-    /* Tabs */
     .stTabs [data-baseweb="tab-list"] {
         background-color: transparent !important;
         gap: 24px !important;
@@ -152,7 +153,6 @@ st.markdown("""
         border-bottom-color: #0B3C2D !important;
     }
 
-    /* Pulsanti */
     .stButton > button, div[data-testid="stFormSubmitButton"] > button {
         border-radius: 6px !important;
         font-weight: 600 !important;
@@ -335,7 +335,7 @@ with tab_aziende:
                             })
                         st.success("Azienda salvata!")
                         st.session_state["toggle_add_az"] = False
-                        st.cache_data.clear()
+                        load_aziende.clear()
                         st.rerun()
 
     st.markdown("---")
@@ -422,13 +422,13 @@ with tab_aziende:
                                     "citta": m_cit.strip(), "pr": m_pr.strip(), "cap": m_cap.strip(), "id": int(row['id'])
                                 })
                             st.success("Aggiornato!")
-                            st.cache_data.clear()
+                            load_aziende.clear()
                             st.rerun()
 
                 if col_b4.button("🗑️ Elimina", key=f"del_az_{row['id']}"):
                     with engine.begin() as conn:
                         conn.execute(text("DELETE FROM public.aziende WHERE id=:id"), {"id": int(row['id'])})
-                    st.cache_data.clear()
+                    load_aziende.clear()
                     st.rerun()
             st.write("")
 
@@ -447,7 +447,7 @@ with tab_settori_op:
                 if st.form_submit_button("➕ Aggiungi Settore", use_container_width=True) and n_settore:
                     with engine.begin() as conn:
                         conn.execute(text("INSERT INTO public.settori (nome) VALUES (:nome)"), {"nome": n_settore.strip()})
-                    st.cache_data.clear()
+                    load_settori.clear()
                     st.rerun()
 
     with col_op_in:
@@ -461,7 +461,7 @@ with tab_settori_op:
                     s_id_v = opts_sett[opts_sett["nome"] == s_op_name]["id"].values[0]
                     with engine.begin() as conn:
                         conn.execute(text("INSERT INTO public.operatori (nome, settore_id) VALUES (:nome, :sid)"), {"nome": n_op.strip(), "sid": int(s_id_v)})
-                    st.cache_data.clear()
+                    load_operatori.clear()
                     st.rerun()
 
     st.markdown("---")
@@ -485,13 +485,13 @@ with tab_settori_op:
                             if st.form_submit_button("💾 Salva"):
                                 with engine.begin() as conn:
                                     conn.execute(text("UPDATE public.settori SET nome = :n WHERE id = :id"), {"n": new_sec_name.strip(), "id": int(s_row['id'])})
-                                st.cache_data.clear()
+                                load_settori.clear()
                                 st.rerun()
 
                     if head_c3.button("🗑️", key=f"del_sec_{s_row['id']}"):
                         with engine.begin() as conn:
                             conn.execute(text("DELETE FROM public.settori WHERE id = :id"), {"id": int(s_row['id'])})
-                        st.cache_data.clear()
+                        load_settori.clear()
                         st.rerun()
 
                     ops_in_sett = df_op_list[df_op_list['settore_id'] == s_row['id']] if not df_op_list.empty else pd.DataFrame()
@@ -511,19 +511,19 @@ with tab_settori_op:
                                         with engine.begin() as conn:
                                             conn.execute(text("UPDATE public.operatori SET nome = :n, settore_id = :sid WHERE id = :id"),
                                                            {"n": new_op_name.strip(), "sid": int(target_sid), "id": int(op_r['id'])})
-                                        st.cache_data.clear()
+                                        load_operatori.clear()
                                         st.rerun()
 
                             if op_c3.button("🗑️", key=f"del_op_{op_r['id']}"):
                                 with engine.begin() as conn:
                                     conn.execute(text("DELETE FROM public.operatori WHERE id = :id"), {"id": int(op_r['id'])})
-                                st.cache_data.clear()
+                                load_operatori.clear()
                                 st.rerun()
                     else:
                         st.caption("Nessun operatore in questo settore.")
 
 # ---------------------------------------------------------
-# 4. PRODOTTI (Con allegato file disegno, anteprima/download, sostituzione e cancellazione)
+# 4. PRODOTTI (Ottimizzato con fetch ON-DEMAND del file)
 # ---------------------------------------------------------
 with tab_prodotti:
     st.subheader("Gestione Prodotti")
@@ -537,8 +537,6 @@ with tab_prodotti:
             p_mat = col_p2.text_input("Materiale / Trattamento")
             
             p_note = st.text_area("Note (Opzionale)")
-            
-            # Campo upload file (PDF, JPG, PNG, JPEG)
             uploaded_file = st.file_uploader("Allega Disegno / Schema (PDF, JPG, PNG, JPEG)", type=["pdf", "jpg", "png", "jpeg"])
 
             st.markdown("#### Ore di Lavorazione per Settore")
@@ -579,7 +577,7 @@ with tab_prodotti:
                                 conn.execute(text("INSERT INTO public.prodotto_ore_settori (prodotto_id, settore_id, ore) VALUES (:pid, :sid, :ore)"),
                                              {"pid": int(new_p_id), "sid": int(s_id), "ore": float(ore_v)})
                     st.success("Prodotto salvato!")
-                    st.cache_data.clear()
+                    load_prodotti.clear()
                     st.rerun()
 
     st.markdown("---")
@@ -589,7 +587,9 @@ with tab_prodotti:
     if s_prod:
         sp_term = f"%{s_prod}%"
         df_prod_all = pd.read_sql("""
-            SELECT * FROM public.prodotti 
+            SELECT id, nome, macchina_gruppo_formato, disegno, materiale_trattamento, 
+                   costo_interno, prezzo_vendita, note, disegno_file_name, disegno_file_mime 
+            FROM public.prodotti 
             WHERE CAST(id AS TEXT) ILIKE %(s)s OR nome ILIKE %(s)s OR materiale_trattamento ILIKE %(s)s 
             ORDER BY nome
         """, engine, params={"s": sp_term})
@@ -606,7 +606,6 @@ with tab_prodotti:
                 dis_str = f" | Disegno: `{pr_row['disegno']}`" if pr_row.get('disegno') else ""
                 mat_str = f" | Materiale: `{pr_row['materiale_trattamento']}`" if pr_row.get('materiale_trattamento') else ""
                 
-                # Controllo sicuro per verificare se il file è presente e non è vuoto/nullo
                 f_name_val = pr_row.get('disegno_file_name')
                 has_file = f_name_val is not None and str(f_name_val).lower() != "nan" and str(f_name_val).strip() != ""
                 file_badge = " 📎 [File Allegato]" if has_file else ""
@@ -617,12 +616,13 @@ with tab_prodotti:
                 col_pb1, col_pb2, col_pb3, col_pb4 = st.columns([1.2, 1.2, 1, 1])
                 pid = int(pr_row['id'])
 
-                # 1. Visualizza / Scarica File Allegato
+                # 1. Visualizza / Scarica File Allegato (Scarica il file SOLO al click)
                 with col_pb1:
                     if has_file:
                         with st.popover("👁️ File"):
                             st.markdown(f"**File:** {f_name_val}")
-                            f_bytes = pr_row.get('disegno_file_data')
+                            # Recupera i byte in tempo reale dal DB solo quando il popover viene aperto
+                            f_bytes = get_file_bytes(pid)
                             if f_bytes is not None:
                                 st.download_button(
                                     "📥 Scarica / Apri",
@@ -662,7 +662,7 @@ with tab_prodotti:
                     st.markdown("**Ore Previste:**")
                     st.dataframe(df_ore_p, hide_index=True, use_container_width=True)
 
-                # 3. Modifica Prodotto (Inclusa sostituzione o rimozione del file)
+                # 3. Modifica Prodotto
                 with col_pb3.popover("✏️"):
                     with st.form(f"mod_prod_{pid}", clear_on_submit=True):
                         mp_nome = st.text_input("Nome", value=pr_row['nome'])
@@ -698,14 +698,14 @@ with tab_prodotti:
                                            materiale_trattamento=:m, costo_interno=:c, prezzo_vendita=:p, note=:nt
                                     WHERE id=:id
                                 """), {"n": mp_nome, "fmt": mp_formato, "d": mp_dis, "m": mp_mat, "c": mp_costo, "p": mp_prezzo, "nt": mp_note, "id": pid})
-                            st.cache_data.clear()
+                            load_prodotti.clear()
                             st.rerun()
 
                 # 4. Elimina Prodotto
                 if col_pb4.button("🗑️", key=f"del_pr_{pid}"):
                     with engine.begin() as conn:
                         conn.execute(text("DELETE FROM public.prodotti WHERE id=:id"), {"id": pid})
-                    st.cache_data.clear()
+                    load_prodotti.clear()
                     st.rerun()
 
 # ---------------------------------------------------------
@@ -989,8 +989,6 @@ with tab_rep:
     st.markdown("---")
 
     st.markdown("### ⏱️ Resoconto Efficienza Lavorazioni (Ore Previste vs Ore Effettive)")
-    
-    # Campo di ricerca e filtri per il resoconto efficienza
     col_rf1, col_rf2 = st.columns([2, 2])
     search_eff = col_rf1.text_input("🔍 Cerca per N. Preventivo o Azienda", key="search_eff_input")
     filter_eff_stato = col_rf2.selectbox("Filtra per Stato", ["Tutti", "Accettato", "In lavorazione", "Completato"], key="filter_eff_stato_input")
@@ -1021,12 +1019,9 @@ with tab_rep:
         WHERE p.stato IN ('Accettato', 'In lavorazione', 'Completato')
     """
     params_eff = {}
-    
-    # Applicazione dinamica dei filtri alla query
     if search_eff:
         q_confronto_ore += " AND (CAST(p.id AS TEXT) ILIKE %(se)s OR a.ragione_sociale ILIKE %(se)s)"
         params_eff["se"] = f"%{search_eff.strip()}%"
-    
     if filter_eff_stato != "Tutti":
         q_confronto_ore += " AND p.stato = %(fst)s"
         params_eff["fst"] = filter_eff_stato
