@@ -582,6 +582,7 @@ with tab_prodotti:
                     st.cache_data.clear()
                     st.rerun()
 
+    st.markdown("---")
     st.markdown("### 🔍 Catalogo Prodotti")
     s_prod = st.text_input("Cerca Prodotto", key="search_prod_field")
 
@@ -595,7 +596,9 @@ with tab_prodotti:
     else:
         df_prod_all = load_prodotti()
 
-    if not df_prod_all.empty:
+    if df_prod_all.empty:
+        st.info("Nessun prodotto trovato.")
+    else:
         for _, pr_row in df_prod_all.iterrows():
             cp_info, cp_act = st.columns([4, 2])
             with cp_info:
@@ -603,8 +606,9 @@ with tab_prodotti:
                 dis_str = f" | Disegno: `{pr_row['disegno']}`" if pr_row.get('disegno') else ""
                 mat_str = f" | Materiale: `{pr_row['materiale_trattamento']}`" if pr_row.get('materiale_trattamento') else ""
                 
-                # Indicatore visivo se il prodotto possiede un file allegato
-                has_file = pr_row.get('disegno_file_name') is not None
+                # Controllo sicuro per verificare se il file è presente e non è vuoto/nullo
+                f_name_val = pr_row.get('disegno_file_name')
+                has_file = f_name_val is not None and str(f_name_val).lower() != "nan" and str(f_name_val).strip() != ""
                 file_badge = " 📎 [File Allegato]" if has_file else ""
 
                 st.markdown(f"**#{pr_row['id']} - {pr_row['nome']}**{fmt_str}{dis_str}{mat_str}{file_badge} | Prezzo: `{pr_row['prezzo_vendita']:,.2f} €`")
@@ -615,16 +619,20 @@ with tab_prodotti:
 
                 # 1. Visualizza / Scarica File Allegato
                 with col_pb1:
-                    if pr_row.get('disegno_file_name'):
+                    if has_file:
                         with st.popover("👁️ File"):
-                            st.markdown(f"**File:** {pr_row['disegno_file_name']}")
-                            st.download_button(
-                                "📥 Scarica / Apri",
-                                data=pr_row['disegno_file_data'],
-                                file_name=pr_row['disegno_file_name'],
-                                mime=pr_row['disegno_file_mime'] or "application/octet-stream",
-                                key=f"dl_file_{pid}"
-                            )
+                            st.markdown(f"**File:** {f_name_val}")
+                            f_bytes = pr_row.get('disegno_file_data')
+                            if f_bytes is not None:
+                                st.download_button(
+                                    "📥 Scarica / Apri",
+                                    data=bytes(f_bytes),
+                                    file_name=str(f_name_val),
+                                    mime=str(pr_row.get('disegno_file_mime') or "application/octet-stream"),
+                                    key=f"dl_file_{pid}"
+                                )
+                            else:
+                                st.warning("Dati file non disponibili.")
                     else:
                         st.caption("Nessun file")
 
@@ -667,8 +675,8 @@ with tab_prodotti:
                         
                         st.markdown("---")
                         st.markdown("**Gestione Disegno Allegato:**")
-                        if pr_row.get('disegno_file_name'):
-                            st.write(f"Attuale: `{pr_row['disegno_file_name']}`")
+                        if has_file:
+                            st.write(f"Attuale: `{f_name_val}`")
                             remove_file_chk = st.checkbox("Elimina file allegato attuale", key=f"rm_file_{pid}")
                         else:
                             remove_file_chk = False
