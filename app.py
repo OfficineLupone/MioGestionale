@@ -989,6 +989,12 @@ with tab_rep:
     st.markdown("---")
 
     st.markdown("### ⏱️ Resoconto Efficienza Lavorazioni (Ore Previste vs Ore Effettive)")
+    
+    # Campo di ricerca e filtri per il resoconto efficienza
+    col_rf1, col_rf2 = st.columns([2, 2])
+    search_eff = col_rf1.text_input("🔍 Cerca per N. Preventivo o Azienda", key="search_eff_input")
+    filter_eff_stato = col_rf2.selectbox("Filtra per Stato", ["Tutti", "Accettato", "In lavorazione", "Completato"], key="filter_eff_stato_input")
+
     q_confronto_ore = """
         WITH prev_ore AS (
             SELECT pd.preventivo_id, SUM(pd.quantita * COALESCE(pos.ore, 0)) AS total_ore_previste
@@ -1013,19 +1019,30 @@ with tab_rep:
         LEFT JOIN prev_ore po ON p.id = po.preventivo_id
         LEFT JOIN eff_ore eo ON p.id = eo.preventivo_id
         WHERE p.stato IN ('Accettato', 'In lavorazione', 'Completato')
-        ORDER BY p.id DESC
     """
-    df_ore_comp = pd.read_sql(q_confronto_ore, engine)
+    params_eff = {}
+    
+    # Applicazione dinamica dei filtri alla query
+    if search_eff:
+        q_confronto_ore += " AND (CAST(p.id AS TEXT) ILIKE %(se)s OR a.ragione_sociale ILIKE %(se)s)"
+        params_eff["se"] = f"%{search_eff.strip()}%"
+    
+    if filter_eff_stato != "Tutti":
+        q_confronto_ore += " AND p.stato = %(fst)s"
+        params_eff["fst"] = filter_eff_stato
+
+    q_confronto_ore += " ORDER BY p.id DESC"
+    df_ore_comp = pd.read_sql(q_confronto_ore, engine, params=params_eff)
 
     if df_ore_comp.empty:
-        st.info("Nessun dato relativo ad ordini o lavorazioni confermate.")
+        st.info("Nessun preventivo trovato con i criteri di ricerca inseriti.")
     else:
         for _, r_eff in df_ore_comp.iterrows():
             p_id_eff = int(r_eff['preventivo_id'])
             diff_val = r_eff['differenza']
             esito_str = "🟢 In orario / Risparmio" if diff_val > 0 else ("🔴 Extra Ore Utilizzate" if diff_val < 0 else "⚪ In linea")
             
-            with st.expander(f"Preventivo #{p_id_eff} - {r_eff['ragione_sociale']} | Stimate: {r_eff['ore_previste']:.1f}h | Effettive: {r_eff['ore_effettive']:.1f}h | Diff: {diff_val:+.1f}h ({esito_str})"):
+            with st.expander(f"Preventivo #{p_id_eff} - {r_eff['ragione_sociale']} ({r_eff['stato']}) | Stimate: {r_eff['ore_previste']:.1f}h | Effettive: {r_eff['ore_effettive']:.1f}h | Diff: {diff_val:+.1f}h ({esito_str})"):
                 col_det_prev, col_det_eff = st.columns(2)
                 
                 with col_det_prev:
